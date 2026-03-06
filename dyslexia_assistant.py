@@ -93,23 +93,40 @@ ANALYSIS_PROMPT_TEMPLATE = (
     "  'misspelled' → 'correction' (pattern: explanation | candidates considered: word1, word2)\n"
 )
 
-CORRECTION_PROMPT_TEMPLATE = (
-    "You are reconstructing the INTENDED text from dysgraphic/dyslexic handwriting.\n\n"
-    "You are given:\n"
-    "(A) The RAW transcription with all errors preserved\n"
-    "(B) A word-by-word error analysis with candidate corrections\n\n"
+# Combined analysis + correction prompt (merges old steps 2 & 3 into one call)
+COMBINED_PROMPT_TEMPLATE = (
+    "You are a dysgraphia and dyslexia specialist AND a text reconstructor.\n\n"
+    "Below is a RAW transcription of handwriting from a person with dyslexia/dysgraphia. "
+    "It contains errors. Your job has TWO PARTS.\n\n"
     "── RAW TRANSCRIPTION ──\n{raw_text}\n── END ──\n\n"
-    "── ERROR ANALYSIS ──\n{analysis}\n── END ──\n\n"
-    "TASK: Rewrite the text as the writer INTENDED it, in clean correct English.\n\n"
-    "CRITICAL RULES:\n"
-    "1. ALWAYS choose the MOST COMMON, EVERYDAY word — never pick a rare or obscure word\n"
-    "   when a common word fits. A child or average person should recognize every word.\n"
-    "2. The corrected sentence must sound NATURAL — something a real person would say.\n"
-    "3. b↔d and p↔g reversals are the MOST LIKELY explanation for those letter swaps.\n"
-    "4. Read the full corrected sentence out loud in your head. Does it sound like\n"
-    "   something someone would normally write? If not, reconsider your word choices.\n"
-    "5. Output ONLY the final corrected text, nothing else.\n"
+    "CRITICAL RULES — read these carefully:\n\n"
+    "★ ALWAYS prefer the MOST COMMON, HIGH-FREQUENCY English word.\n"
+    "  Example: 'dall' → 'ball' (common word) NOT 'dall' → 'dally' (obscure word).\n\n"
+    "★ The #1 dyslexia pattern is LETTER REVERSAL. These pairs are constantly confused:\n"
+    "  • b ↔ d  (most common! e.g. 'dall' = 'ball', 'doy' = 'boy', 'bog' = 'dog')\n"
+    "  • p ↔ q, p ↔ g  (e.g. 'glay' = 'play')\n"
+    "  • n ↔ u, m ↔ w\n\n"
+    "★ Other patterns: transposition, omission, insertion, phonetic substitution.\n\n"
+    "★ ALWAYS consider the FULL SENTENCE context — pick the most NATURAL sentence.\n\n"
+    "══════════════════════════════════════\n"
+    "PART 1 — ERROR ANALYSIS\n"
+    "══════════════════════════════════════\n"
+    "List each misspelled word, identify the error pattern, generate 2-3 candidates, "
+    "and pick the best one.\n"
+    "Format: 'misspelled' → 'correction' (pattern: explanation)\n\n"
+    "══════════════════════════════════════\n"
+    "PART 2 — CORRECTED TEXT\n"
+    "══════════════════════════════════════\n"
+    "After the analysis, write the FINAL corrected text that the writer INTENDED, "
+    "in clean correct English. It must sound NATURAL.\n\n"
+    "Use EXACTLY this format:\n\n"
+    "=== ERROR ANALYSIS ===\n"
+    "(your word-by-word analysis here)\n\n"
+    "=== CORRECTED TEXT ===\n"
+    "(the final corrected text here)\n"
 )
+
+MAX_IMAGE_DIMENSION = 1024  # Resize images to this max before sending
 
 
 def connect(url=None):
@@ -152,21 +169,42 @@ def encode_image_file_to_base64(image_path):
         return base64.b64encode(f.read()).decode("utf-8")
 
 
+def compress_image_for_api(pil_image, max_dim=MAX_IMAGE_DIMENSION, quality=85):
+    """
+    Resize a PIL image so its longest edge is at most *max_dim* pixels,
+    then JPEG-compress it and return the base64 string.
+    This typically cuts payload size by 3–5× compared to sending raw frames.
+    """
+    img = pil_image.copy()
+    img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+    if img.mode == "RGBA":
+        img = img.convert("RGB")
+    from io import BytesIO
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 def chat_sync(url, model, messages, images=None, max_retries=4, timeout=300):
     """
     Send a chat request to Ollama and return the full response text.
-    This is a non-streaming variant suitable for GUI use (no print side-effects).
+    Non-streaming wrapper (waits for complete response).
+    """
+    result = []
+    chat_sync_streaming(url, model, messages, images=images,
+                        on_token=lambda t: result.append(t),
+                        max_retries=max_retries, timeout=timeout)
+    return "".join(result) if result else None
+
+
+def chat_sync_streaming(url, model, messages, images=None,
+                        on_token=None, max_retries=4, timeout=300):
+    """
+    Send a chat request to Ollama, calling *on_token(text)* for each
+    streamed token.  Returns the full response string or None on failure.
 
     Args:
-        url:         Base Ollama server URL.
-        model:       Model name.
-        messages:    List of {role, content} dicts.
-        images:      Optional list of base64-encoded image strings.
-        max_retries: Retry count on timeout / 504.
-        timeout:     Request timeout in seconds.
-
-    Returns:
-        The complete assistant response string, or None on failure.
+        on_token:  Callable(str) invoked with each new text chunk as it arrives.
     """
     send_messages = [dict(msg) for msg in messages]
     if images and send_messages:
@@ -194,7 +232,10 @@ def chat_sync(url, model, messages, images=None, max_retries=4, timeout=300):
                         try:
                             chunk = json.loads(line)
                             delta = chunk.get("message", {}).get("content", "")
-                            full_response += delta
+                            if delta:
+                                full_response += delta
+                                if on_token:
+                                    on_token(delta)
                             if chunk.get("done"):
                                 break
                         except json.JSONDecodeError:
@@ -536,7 +577,7 @@ class DyslexiaAssistantApp:
         self.preview_label.configure(image=imgtk, text="")
 
     def _on_camera_snapshot(self):
-        """Open the webcam, grab one frame, close immediately."""
+        """Open a live camera preview window so the user can position their paper."""
         self._set_status("Opening camera…", "#f9e2af")
         self.camera_btn.config(state=tk.DISABLED)
         self.root.update_idletasks()
@@ -547,27 +588,121 @@ class DyslexiaAssistantApp:
             self.camera_btn.config(state=tk.NORMAL)
             return
 
-        # Let the camera warm up and grab a frame
-        for _ in range(5):
-            cap.read()
-        ret, frame = cap.read()
-        cap.release()
+        # Store camera handle for the preview loop
+        self._cam_cap = cap
+        self._cam_frame = None        # latest frame from the camera
+        self._cam_running = True       # flag to stop the feed loop
+        self._countdown_active = False
 
-        if not ret:
-            self._set_status("⚠  Could not capture frame", "#f38ba8")
-            self.camera_btn.config(state=tk.NORMAL)
+        # ── Build the camera preview window ──
+        self._cam_win = tk.Toplevel(self.root)
+        self._cam_win.title("📷  Camera Preview — Position your paper, then click Take Photo")
+        self._cam_win.geometry("700x580")
+        self._cam_win.configure(bg="#1e1e2e")
+        self._cam_win.resizable(False, False)
+        self._cam_win.protocol("WM_DELETE_WINDOW", self._cancel_camera)
+        self._cam_win.grab_set()       # make modal
+        self._cam_win.focus_force()
+
+        # Live feed label
+        self._cam_label = tk.Label(self._cam_win, bg="#313244")
+        self._cam_label.pack(padx=15, pady=(15, 8))
+
+        # Countdown overlay label (hidden until countdown starts)
+        self._countdown_label = tk.Label(
+            self._cam_win, text="", font=("Segoe UI", 28, "bold"),
+            bg="#1e1e2e", fg="#f9e2af",
+        )
+        self._countdown_label.pack(pady=(0, 4))
+
+        # Button row
+        btn_row = tk.Frame(self._cam_win, bg="#1e1e2e")
+        btn_row.pack(fill=tk.X, padx=15, pady=(0, 15))
+
+        self._cam_take_btn = tk.Button(
+            btn_row, text="📸  Take Photo  (3 s countdown)",
+            font=("Segoe UI", 12, "bold"),
+            bg="#a6e3a1", fg="#1e1e2e", activebackground="#94e2d5",
+            relief="flat", cursor="hand2",
+            command=self._start_countdown,
+        )
+        self._cam_take_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, ipady=8, padx=(0, 6))
+
+        self._cam_cancel_btn = tk.Button(
+            btn_row, text="❌  Cancel",
+            font=("Segoe UI", 12, "bold"),
+            bg="#f38ba8", fg="#1e1e2e", activebackground="#eba0ac",
+            relief="flat", cursor="hand2",
+            command=self._cancel_camera,
+        )
+        self._cam_cancel_btn.pack(side=tk.RIGHT, expand=True, fill=tk.X, ipady=8, padx=(6, 0))
+
+        # Start the live feed loop
+        self._update_camera_feed()
+
+    def _update_camera_feed(self):
+        """Continuously display frames from the webcam in the preview window."""
+        if not self._cam_running:
             return
+        ret, frame = self._cam_cap.read()
+        if ret:
+            self._cam_frame = frame
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(rgb)
+            img.thumbnail((660, 460), Image.LANCZOS)
+            imgtk = ImageTk.PhotoImage(image=img)
+            self._cam_label.imgtk = imgtk
+            self._cam_label.configure(image=imgtk)
+        # Schedule next frame (~30 fps)
+        if self._cam_running:
+            self._cam_win.after(33, self._update_camera_feed)
 
-        # Encode to base64 and show preview
-        _, buffer = cv2.imencode(".jpg", frame)
-        self.current_b64_image = encode_image_bytes_to_base64(buffer)
+    def _start_countdown(self):
+        """Begin the 3-second countdown before capturing."""
+        if self._countdown_active:
+            return
+        self._countdown_active = True
+        self._cam_take_btn.config(state=tk.DISABLED)
+        self._countdown_tick(3)
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        self._show_preview(Image.fromarray(rgb))
+    def _countdown_tick(self, remaining):
+        """Update the countdown display and capture when it reaches 0."""
+        if not self._cam_running:
+            return
+        if remaining > 0:
+            self._countdown_label.config(text=f"📸  Capturing in {remaining}…")
+            self._cam_win.after(1000, self._countdown_tick, remaining - 1)
+        else:
+            self._countdown_label.config(text="📸  Captured!")
+            self._capture_and_close()
 
+    def _capture_and_close(self):
+        """Grab the latest frame, encode it, update main preview, and close camera window."""
+        frame = self._cam_frame
+        # Stop the feed and release the camera
+        self._cam_running = False
+        self._cam_cap.release()
+
+        if frame is not None:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb)
+            self.current_b64_image = compress_image_for_api(pil_img)
+            self._show_preview(pil_img)
+            self.transcribe_btn.config(state=tk.NORMAL)
+            self._set_status("✓ Snapshot captured — click Transcribe to process", "#a6e3a1")
+        else:
+            self._set_status("⚠  Could not capture frame", "#f38ba8")
+
+        self._cam_win.destroy()
         self.camera_btn.config(state=tk.NORMAL)
-        self.transcribe_btn.config(state=tk.NORMAL)
-        self._set_status("✓ Snapshot captured — click Transcribe to process", "#a6e3a1")
+
+    def _cancel_camera(self):
+        """Close the camera preview without capturing anything."""
+        self._cam_running = False
+        self._cam_cap.release()
+        self._cam_win.destroy()
+        self.camera_btn.config(state=tk.NORMAL)
+        self._set_status("Camera cancelled", "#a6adc8")
 
     def _on_upload_file(self):
         """Open a file dialog to select an image."""
@@ -584,7 +719,7 @@ class DyslexiaAssistantApp:
         try:
             pil_img = Image.open(file_path)
             self._show_preview(pil_img)
-            self.current_b64_image = encode_image_file_to_base64(file_path)
+            self.current_b64_image = compress_image_for_api(pil_img)
             self.transcribe_btn.config(state=tk.NORMAL)
             self._set_status(
                 f"✓ Loaded: {os.path.basename(file_path)} — click Transcribe to process",
@@ -605,10 +740,10 @@ class DyslexiaAssistantApp:
         self.camera_btn.config(state=tk.DISABLED)
         self.upload_btn.config(state=tk.DISABLED)
         self.transcribe_btn.config(text="⏳  Processing…", state=tk.DISABLED)
-        self._set_raw_text("Sending image to AI for transcription…")
-        self._set_analysis_text("Waiting for raw transcription…")
-        self._set_corrected_text("Waiting for analysis…")
-        self._set_status("Step 1/3 — Reading handwriting from image…", "#f9e2af")
+        self._set_raw_text("")
+        self._set_analysis_text("")
+        self._set_corrected_text("")
+        self._set_status("Step 1/2 — Reading handwriting from image…", "#f9e2af")
         self.notebook.select(0)
 
         threading.Thread(
@@ -617,51 +752,64 @@ class DyslexiaAssistantApp:
             daemon=True,
         ).start()
 
+    def _append_text_widget(self, widget, text):
+        """Append text to a ScrolledText widget (for live streaming)."""
+        widget.config(state=tk.NORMAL)
+        widget.insert(tk.END, text)
+        widget.see(tk.END)
+        widget.config(state=tk.DISABLED)
+
     def _transcription_pipeline(self, b64_image):
-        """Background thread: 3-step chain-of-thought pipeline."""
+        """Background thread: optimized 2-step pipeline with live streaming."""
 
         # ══════════════════════════════════════════════════════════════
-        # STEP 1 — Raw transcription via Ollama vision model
+        # STEP 1 — Raw transcription via Ollama vision model (streamed)
         # ══════════════════════════════════════════════════════════════
+        def on_raw_token(token):
+            self.root.after(0, self._append_text_widget, self.raw_text, token)
+
         messages = [{"role": "user", "content": RAW_TRANSCRIPTION_PROMPT}]
-        raw = chat_sync(self.url, self.model, messages, images=[b64_image])
+        raw = chat_sync_streaming(
+            self.url, self.model, messages,
+            images=[b64_image], on_token=on_raw_token,
+        )
 
         if not raw:
             self.root.after(0, self._pipeline_error, "Transcription failed — check your Ollama server and model.")
             return
 
-        self.root.after(0, self._set_raw_text, raw)
-        self.root.after(0, self._set_status, "Step 2/3 — Analyzing dysgraphia error patterns…", "#fab387")
+        self.root.after(0, self._set_status, "Step 2/2 — Analyzing errors & reconstructing text…", "#fab387")
 
         # ══════════════════════════════════════════════════════════════
-        # STEP 2 — Word-by-word error analysis (chain-of-thought)
-        # This makes the model explicitly reason about EACH misspelling
-        # and map it to the most probable intended word, dramatically
-        # improving the final correction quality.
+        # STEP 2 — Combined error analysis + correction (streamed)
+        #          Merges old steps 2 & 3 into a single API call.
         # ══════════════════════════════════════════════════════════════
-        analysis_prompt = ANALYSIS_PROMPT_TEMPLATE.format(raw_text=raw)
-        analysis_messages = [{"role": "user", "content": analysis_prompt}]
-        analysis = chat_sync(self.url, self.model, analysis_messages)
+        combined_prompt = COMBINED_PROMPT_TEMPLATE.format(raw_text=raw)
+        combined_messages = [{"role": "user", "content": combined_prompt}]
 
-        if not analysis:
-            # Fall back: skip analysis, attempt direct correction
-            analysis = "(Analysis unavailable — falling back to direct correction)"
+        # Stream into the analysis tab while it generates
+        def on_combined_token(token):
+            self.root.after(0, self._append_text_widget, self.analysis_text, token)
 
-        self.root.after(0, self._set_analysis_text, analysis)
-        self.root.after(0, lambda: self.notebook.select(1))  # Switch to analysis tab
-        self.root.after(0, self._set_status, "Step 3/3 — Reconstructing corrected text…", "#a6e3a1")
+        self.root.after(0, lambda: self.notebook.select(1))
+        combined = chat_sync_streaming(
+            self.url, self.model, combined_messages, on_token=on_combined_token,
+        )
 
-        # ══════════════════════════════════════════════════════════════
-        # STEP 3 — Final reconstruction using BOTH the raw text AND
-        # the analysis, producing a much more accurate correction
-        # ══════════════════════════════════════════════════════════════
-        correction_prompt = CORRECTION_PROMPT_TEMPLATE.format(raw_text=raw, analysis=analysis)
-        correction_messages = [{"role": "user", "content": correction_prompt}]
-        corrected = chat_sync(self.url, self.model, correction_messages)
+        if not combined:
+            combined = "(Analysis unavailable)"
+
+        # Parse the combined response to extract the corrected text
+        corrected = ""
+        if "=== CORRECTED TEXT ===" in combined:
+            corrected = combined.split("=== CORRECTED TEXT ===", 1)[1].strip()
+        else:
+            # Fallback: use the whole response
+            corrected = combined
 
         if corrected:
             self.root.after(0, self._set_corrected_text, corrected)
-            self.root.after(0, lambda: self.notebook.select(2))  # Switch to corrected tab
+            self.root.after(0, lambda: self.notebook.select(2))
         else:
             self.root.after(0, self._set_corrected_text, "(Correction failed — see raw transcription)")
 
