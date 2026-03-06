@@ -25,6 +25,8 @@ from tkinter import scrolledtext, messagebox, ttk, filedialog
 from PIL import Image, ImageTk
 import requests
 
+VERSION = "1.1.1"
+
 # ════════════════════════════════════════════════════════════════════
 # ██  OLLAMA API CLIENT
 # ════════════════════════════════════════════════════════════════════
@@ -438,7 +440,7 @@ class DyslexiaAssistantApp:
 
     def _build_window(self):
         self.root = tk.Tk()
-        self.root.title(f"Dyslexia Assistant — {self.model}")
+        self.root.title(f"Dyslexia Assistant v{VERSION} — {self.model}")
         self.root.geometry("1150x720")
         self.root.configure(bg="#1e1e2e")
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)

@@ -1,85 +1,100 @@
-# Dysgraphia Handwriting Transcription & Analysis
+# 🧠 Dyslexia Assistant v1.1.1
 
-A command-line tool that uses an **Ollama** vision model to transcribe handwriting from images and analyse it for dysgraphia patterns (letter reversals, inconsistent spacing, spelling errors, etc.).
+A desktop GUI application that uses **Ollama vision models** to transcribe dysgraphic/dyslexic handwriting from images, analyse error patterns, and produce corrected text — all in real time.
 
-## Features
+## ✨ Features
 
-- **Image transcription** — select a handwriting image via file browser; the vision model reads it exactly as written.
-- **Auto-correction** — a second pass rewrites the raw transcription into clean, corrected English.
-- **AI analysis chat** — after transcription you can ask follow-up questions about the errors, patterns, and corrections.
-- **Standalone chat mode** — `model.py` can also be run on its own for general Ollama chat.
+- **Live Camera Preview** — open your webcam, position your handwriting sample, and capture with a **3-second countdown timer**
+- **File Upload** — alternatively load handwriting images from disk (JPG, PNG, BMP, WebP)
+- **Smart Image Compression** — images are automatically resized and compressed before sending, for faster processing
+- **2-Step AI Pipeline** — optimized chain-of-thought transcription:
+  1. **Raw Transcription** — vision model reads handwriting exactly as written, preserving all errors
+  2. **Error Analysis + Correction** — identifies dyslexia/dysgraphia patterns (letter reversals, transpositions, omissions) and reconstructs the intended text
+- **Live Streaming** — see AI results appear word-by-word in real time as they generate
+- **Tabbed Results** — separate tabs for raw transcription, error analysis, and corrected text
+- **Ollama Integration** — works with any vision-capable model (llava, qwen2-vl, qwen3-vl, minicpm-v, etc.)
 
-## Requirements
+## 📋 Requirements
 
 - **Python 3.8+**
-- **Ollama server** running locally or remotely (with a vision-capable model such as `llava` or `qwen2-vl`)
+- **Ollama server** running locally or remotely (with a vision-capable model)
 - Python packages:
   ```
-  pip install requests
+  pip install requests opencv-python Pillow
   ```
   `tkinter` is included with standard Python on most platforms.
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Start / connect to an Ollama server
+### 1. Start an Ollama server
 
-Make sure Ollama is running — either **locally** (`ollama serve`) or on a **remote** server. The tool will prompt you to choose:
-
-```
-  [1] Local  (http://localhost:11434)
-  [2] Remote (https://myollamaapi2000.share.zrok.io)
-  [3] Custom URL
-```
-
-### 2. Run the transcription tool
+Make sure Ollama is running with a vision model pulled:
 
 ```bash
-python "transcribe_api2 (1).py"
+ollama serve
+ollama pull qwen2-vl
 ```
 
-The tool walks you through four steps:
+Or connect to a remote server via ngrok or similar.
+
+### 2. Run the application
+
+```bash
+python dyslexia_assistant.py
+```
+
+### 3. Setup dialog
+
+1. Enter your Ollama server URL (default or custom)
+2. Click **Connect & List Models**
+3. Select a **vision model** (marked with ✅)
+4. Click **▶ Start Assistant**
+
+### 4. Capture & transcribe
 
 | Step | What happens |
 |------|-------------|
-| 1 | Connect to the Ollama server |
-| 2 | Pick a vision model from the available list |
-| 3 | Select a handwriting image via file dialog |
-| 4 | Transcribe → auto-correct → enter analysis chat |
+| 1 | Click **📷 Camera Snapshot** or **📁 Upload from File** |
+| 2 | For camera: position your paper in the live preview, click **📸 Take Photo** (3s countdown) |
+| 3 | Click **🚀 Transcribe & Correct** |
+| 4 | Watch results stream live into the tabs |
 
-### 3. Standalone chat (optional)
-
-```bash
-python model.py
-```
-
-Connects to Ollama and starts an interactive chat session without any image processing.
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 Dsylexia Assistant/
-├── transcribe_api2 (1).py   # Main entry point — full transcription & analysis flow
+├── dyslexia_assistant.py    # Main GUI app — camera, transcription & analysis
 ├── model.py                 # Ollama API client module (also runnable standalone)
+├── vision.py                # Legacy standalone camera scanner (HuggingFace API)
+├── transcribe_api2 (1).py   # Legacy CLI transcription tool
 └── README.md
 ```
 
-## How It Works
+## ⚙️ How It Works
 
 ```
-Image ──► Ollama Vision Model ──► Raw Transcription
-                                        │
-                                        ▼
-                                  Auto-Correction
-                                        │
-                                        ▼
-                              Interactive AI Analysis
+Camera / File ──► Image Compression ──► Ollama Vision Model ──► Raw Transcription
+                   (1024px, JPEG q85)                                  │
+                                                                       ▼
+                                                          Error Analysis + Correction
+                                                          (single combined API call)
+                                                                       │
+                                                                       ▼
+                                                              Corrected Text
 ```
 
-1. The selected image is **base64-encoded** and sent to the Ollama `/api/chat` endpoint with a vision-capable model.
-2. The raw transcription preserves all original errors.
-3. A correction prompt asks the model to rewrite the text as normal English.
-4. An interactive chat session lets you explore dysgraphia patterns, ask for explanations, or request alternative corrections.
+1. Image is **resized** (max 1024px) and **JPEG-compressed** to minimize transfer time
+2. The vision model **transcribes** handwriting exactly as written, preserving all dysgraphic errors
+3. A combined prompt performs **error analysis** (identifying reversal, transposition, omission patterns) and **text correction** in a single API call
+4. Results **stream live** into the GUI — no waiting for the full response
 
-## License
+## 📌 Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **1.1.1** | 2026-03-06 | Live camera preview with 3s countdown, image compression, merged 2-step pipeline, live streaming UI |
+| **1.0.0** | — | Initial release with instant camera snapshot and 3-step pipeline |
+
+## 📄 License
 
 This project is provided as-is for educational and assistive purposes.
