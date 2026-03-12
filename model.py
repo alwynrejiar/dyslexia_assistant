@@ -1,232 +1,257 @@
 """
-model.py — Ollama Chat & Vision Client Module
-Provides functions to connect to an Ollama API endpoint, select a model,
-run interactive chat sessions, and send images to vision models.
-Can be used standalone or imported by other scripts.
+model.py — Google Gemini Vision & Chat Client Module
+Drop-in replacement for the Ollama/Anthropic model.py.
+
+Uses Google AI Studio (Gemini) — FREE tier via aistudio.google.com
+  • gemini-2.5-flash       → best quality, free, supports vision
+  • gemini-3-flash-preview → fastest, free, supports vision
+
+Speed: ~5–15 seconds total (vs 3–5 minutes with local Ollama)
+Cost:  FREE on Google AI Studio free tier
+
+Install:
+    pip install google-genai Pillow
 """
 
-import json
-import time
-import base64
-import requests
+import io
+from pathlib import Path
+from google import genai
+from google.genai import types
 
-HEADERS = {
-    "ngrok-skip-browser-warning": "1",
-    "Content-Type": "application/json",
+# ── Constants ────────────────────────────────────────────────────
+
+# Best free model for handwriting analysis (vision + fast + free)
+DEFAULT_MODEL = "gemini-2.5-flash"
+
+IMAGE_TYPES = {
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png":  "image/png",
+    ".gif":  "image/gif",
+    ".webp": "image/webp",
+    ".bmp":  "image/bmp",
 }
 
-DEFAULT_URL = "https://unjocund-madge-edgingly.ngrok-free.dev"
+
+# ── Client ───────────────────────────────────────────────────────
+
+def make_client(api_key: str) -> genai.Client:
+    """Create and return a Google Gemini client."""
+    return genai.Client(api_key=api_key)
 
 
-def connect(url=None):
+def validate_api_key(api_key: str) -> tuple[bool, str]:
     """
-    Connect to an Ollama API endpoint.
-    Returns the validated URL or raises SystemExit on failure.
+    Test the API key with a minimal call.
+    Returns (success: bool, message: str).
     """
-    url = (url or DEFAULT_URL).rstrip("/")
+    if not api_key or len(api_key) < 20:
+        return False, "Key looks too short — check you copied it fully"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        if r.status_code not in (200, 404):
-            print(f"[WARN] Server responded with {r.status_code}\n{r.text[:300]}")
-    except requests.exceptions.ConnectionError:
-        print(f"[!] Cannot reach {url}")
-        raise SystemExit(1)
-    return url
+        client = make_client(api_key)
+        models = list(client.models.list())
+        if models:
+            return True, f"Connected · {DEFAULT_MODEL}"
+        return True, "Connected to Google AI Studio"
+    except Exception as e:
+        msg = str(e)
+        if "API_KEY_INVALID" in msg or "invalid" in msg.lower():
+            return False, "Invalid API key — check aistudio.google.com"
+        if "quota" in msg.lower():
+            return False, "Quota exceeded — wait a moment and retry"
+        return False, f"Connection error: {msg[:120]}"
 
 
-def list_models(url):
+# ── Image helpers ────────────────────────────────────────────────
+
+def encode_image_file(image_path: str) -> tuple[bytes, str]:
     """
-    Fetch the list of available models from the Ollama endpoint.
-    Returns a list of model name strings.
+    Read an image file and return (raw_bytes, media_type).
+    Raises ValueError for unsupported formats.
     """
-    try:
-        r = requests.get(f"{url}/api/tags", headers=HEADERS, timeout=15)
-        if r.status_code != 200:
-            print(f"[!] Failed to list models ({r.status_code}): {r.text[:400]}")
-            raise SystemExit(1)
-        models = [m["name"] for m in r.json().get("models", [])]
-    except requests.exceptions.ConnectionError:
-        print("[!] Lost connection while listing models")
-        raise SystemExit(1)
-    if not models:
-        print("[!] No models available on this server")
-        raise SystemExit(1)
-    return models
-
-
-def select_model(url, prompt="Select model (number or name): "):
-    """
-    Display available models and let the user pick one interactively.
-    Returns the chosen model name string.
-    """
-    models = list_models(url)
-    print("\nAvailable models:")
-    for i, name in enumerate(models, 1):
-        print(f"  [{i}] {name}")
-    chosen = None
-    while not chosen:
-        choice = input(prompt).strip()
-        if choice.isdigit() and 0 < int(choice) <= len(models):
-            chosen = models[int(choice) - 1]
-        elif choice in models:
-            chosen = choice
-        else:
-            print("  Invalid choice, try again.")
-    return chosen
-
-
-def encode_image_to_base64(image_path):
-    """Read an image file and return its base64-encoded string."""
+    ext = Path(image_path).suffix.lower()
+    media_type = IMAGE_TYPES.get(ext)
+    if not media_type:
+        raise ValueError(f"Unsupported image type: {ext}. Use JPG, PNG, WebP or BMP.")
     with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+        return f.read(), media_type
 
 
-def chat_stream(url, model, messages, images=None, max_retries=4, timeout=300):
+def encode_image_bytes(image_bytes: bytes, media_type: str = "image/jpeg") -> tuple[bytes, str]:
+    """Pass through raw image bytes with media type."""
+    return image_bytes, media_type
+
+
+def compress_image(image_bytes: bytes, max_dim: int = 1200, quality: int = 85) -> bytes:
     """
-    Send a chat request to the Ollama API with streaming enabled.
-    Supports sending images for vision models.
+    Resize and JPEG-compress an image for faster API transfer.
+    Returns compressed JPEG bytes.
+    """
+    from PIL import Image
+    img = Image.open(io.BytesIO(image_bytes))
+    img.thumbnail((max_dim, max_dim))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def _make_image_part(image_bytes: bytes, media_type: str) -> types.Part:
+    """Create a Gemini image Part from raw bytes."""
+    return types.Part.from_bytes(data=image_bytes, mime_type=media_type)
+
+
+# ── Step 1: Raw Transcription ────────────────────────────────────
+
+def transcribe_stream(
+    client: genai.Client,
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    on_chunk=None,
+    model: str = DEFAULT_MODEL,
+) -> str:
+    """
+    Step 1 — Transcribe handwriting EXACTLY as written (preserve all errors).
 
     Args:
-        url:         Base URL of the Ollama server.
-        model:       Model name to use.
-        messages:    List of message dicts (role/content).
-        images:      Optional list of base64-encoded image strings
-                     (attached to the last user message for vision models).
-        max_retries: Number of retry attempts.
-        timeout:     Request timeout in seconds.
+        client:      Gemini client instance.
+        image_bytes: Raw image bytes.
+        media_type:  Image MIME type.
+        on_chunk:    Optional callback(partial_text) for live streaming UI updates.
+        model:       Gemini model string.
 
     Returns:
-        The full assistant response text, or None on failure.
+        Full raw transcription string.
     """
-    # If images are provided, attach them to the last user message
-    send_messages = []
-    for msg in messages:
-        send_messages.append(dict(msg))  # shallow copy
-    if images and send_messages:
-        send_messages[-1]["images"] = images
+    prompt = (
+        "You are an expert at reading dysgraphic and dyslexic handwriting. "
+        "Transcribe the handwritten text in this image EXACTLY as written. "
+        "Preserve every misspelling, reversed letter, phonetic spelling, "
+        "omission, transposition, capitalisation error, and spacing error. "
+        "Do NOT autocorrect or fix anything — accurate error preservation is "
+        "essential for diagnosing the writer's dyslexia/dysgraphia. "
+        "Output ONLY the raw transcription, no commentary or explanation."
+    )
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            with requests.post(
-                f"{url}/api/chat",
-                headers=HEADERS,
-                json={"model": model, "messages": send_messages, "stream": True},
-                stream=True,
-                timeout=timeout,
-            ) as r:
-                if r.status_code == 504:
-                    wait = 15 * attempt
-                    print(f"\n[!] Gateway timeout — retrying in {wait}s...")
-                    time.sleep(wait)
-                    continue
-                if not r.ok:
-                    print(f"\n[!] Error {r.status_code}: {r.text[:300]}")
-                    return None
+    image_part = _make_image_part(image_bytes, media_type)
+    full_text = ""
 
-                full_response = ""
-                for line in r.iter_lines():
-                    if line:
-                        try:
-                            chunk = json.loads(line)
-                            delta = chunk.get("message", {}).get("content", "")
-                            print(delta, end="", flush=True)
-                            full_response += delta
-                            if chunk.get("done"):
-                                break
-                        except json.JSONDecodeError:
-                            pass
-                return full_response
+    for chunk in client.models.generate_content_stream(
+        model=model,
+        contents=[image_part, prompt],
+    ):
+        delta = chunk.text or ""
+        full_text += delta
+        if on_chunk and delta:
+            on_chunk(full_text)
 
-        except requests.exceptions.Timeout:
-            wait = 15 * attempt
-            print(f"\n[!] Request timed out — retrying in {wait}s...")
-            time.sleep(wait)
-        except requests.exceptions.RequestException as e:
-            print(f"\n[!] Request error: {e}")
-            return None
-
-    print("\n[!] All retry attempts failed")
-    return None
+    return full_text.strip()
 
 
-def transcribe_image(url, model, image_path, prompt=None):
+# ── Step 2: Error Analysis + Correction ─────────────────────────
+
+def analyse_and_correct_stream(
+    client: genai.Client,
+    raw_transcription: str,
+    on_analysis_chunk=None,
+    on_corrected_chunk=None,
+    model: str = DEFAULT_MODEL,
+) -> tuple[str, str]:
     """
-    Send an image to an Ollama vision model for transcription.
+    Step 2 — Combined error analysis + correction in one API call.
+    Uses XML delimiters to split the streaming response into two sections.
 
     Args:
-        url:        Base URL of the Ollama server.
-        model:      Vision model name (e.g. qwen3-vl:8b).
-        image_path: Path to the image file.
-        prompt:     Custom prompt text. Uses a dysgraphia transcription
-                    prompt by default.
+        client:              Gemini client instance.
+        raw_transcription:   Output from transcribe_stream().
+        on_analysis_chunk:   Callback(partial_text) for streaming analysis tab.
+        on_corrected_chunk:  Callback(partial_text) for streaming corrected tab.
+        model:               Gemini model string.
 
     Returns:
-        The transcription text, or None on failure.
+        (analysis_text, corrected_text) tuple.
     """
-    if prompt is None:
-        prompt = (
-            "You are an expert at reading and transcribing dysgraphic handwriting. "
-            "Please transcribe the handwritten text in this image as accurately as possible. "
-            "Crucially, preserve the exact spelling, grammar, spacing, and punctuation as written, "
-            "even if it is incorrect. Do not autocorrect or fix mistakes, as analyzing these "
-            "errors is necessary for diagnosing the writer's dysgraphia."
-        )
+    prompt = (
+        f"The following text was transcribed from a handwriting sample written by "
+        f"someone with dyslexia or dysgraphia. The transcription preserves all "
+        f"original errors:\n\n"
+        f"<raw_transcription>\n{raw_transcription}\n</raw_transcription>\n\n"
+        f"Respond in EXACTLY this format, with no extra text outside the tags:\n\n"
+        f"<analysis>\n"
+        f"For each error, write one bullet:\n"
+        f"• Written: [word as written] → Intended: [correct word] · "
+        f"Type: [REV=reversal / PHON=phonetic / OMIT=omission / "
+        f"TRANS=transposition / CAP=capitalisation / SPACE=spacing / "
+        f"SUB=substitution / ADD=addition / OTHER]\n\n"
+        f"End with a short Summary paragraph describing the overall "
+        f"dyslexia/dysgraphia indicators observed.\n"
+        f"</analysis>\n\n"
+        f"<corrected>\n"
+        f"[The fully corrected text. Fix all errors. Preserve the author's "
+        f"original meaning, tone, and voice exactly.]\n"
+        f"</corrected>"
+    )
 
-    b64_image = encode_image_to_base64(image_path)
-    messages = [{"role": "user", "content": prompt}]
+    full_text = ""
 
-    print("AI: ", end="", flush=True)
-    result = chat_stream(url, model, messages, images=[b64_image])
-    print()  # newline after streamed output
-    return result
+    for chunk in client.models.generate_content_stream(
+        model=model,
+        contents=[prompt],
+    ):
+        delta = chunk.text or ""
+        full_text += delta
 
+        # Stream analysis section live
+        if "<analysis>" in full_text:
+            a_start = full_text.find("<analysis>") + len("<analysis>")
+            a_end = full_text.find("</analysis>") if "</analysis>" in full_text else len(full_text)
+            partial = full_text[a_start:a_end].strip()
+            if partial and on_analysis_chunk:
+                on_analysis_chunk(partial)
 
-def interactive_chat(url, model, system_prompt=None, prefill_history=None):
-    """
-    Run an interactive chat loop in the terminal.
+        # Stream corrected section live
+        if "<corrected>" in full_text:
+            c_start = full_text.find("<corrected>") + len("<corrected>")
+            c_end = full_text.find("</corrected>") if "</corrected>" in full_text else len(full_text)
+            partial = full_text[c_start:c_end].strip()
+            if partial and on_corrected_chunk:
+                on_corrected_chunk(partial)
 
-    Args:
-        url:              Base URL of the Ollama server.
-        model:            Model name to use.
-        system_prompt:    Optional system message to set context.
-        prefill_history:  Optional list of messages to pre-load into history.
-    """
-    print(f"\n── {model} ──")
-    print("Type 'quit', 'exit', or 'q' to end the session.\n")
+    # Final clean parse after stream ends
+    def extract(tag):
+        start = full_text.find(f"<{tag}>")
+        end   = full_text.find(f"</{tag}>")
+        if start == -1:
+            return ""
+        return full_text[start + len(f"<{tag}>") : end if end != -1 else len(full_text)].strip()
 
-    history = []
-    if system_prompt:
-        history.append({"role": "system", "content": system_prompt})
-    if prefill_history:
-        history.extend(prefill_history)
-
-    while True:
-        try:
-            user_input = input("You: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye!")
-            break
-        if user_input.lower() in {"quit", "exit", "q"}:
-            print("Bye!")
-            break
-        if not user_input:
-            continue
-
-        history.append({"role": "user", "content": user_input})
-        print("AI: ", end="", flush=True)
-
-        response = chat_stream(url, model, history)
-        print()  # newline after streamed response
-
-        if response:
-            history.append({"role": "assistant", "content": response})
-        else:
-            history.pop()  # remove failed user message
+    return extract("analysis"), extract("corrected")
 
 
-# ── Standalone mode ──────────────────────────────────────────────
+# ── Standalone test ──────────────────────────────────────────────
+
 if __name__ == "__main__":
-    url = input(f"URL [{DEFAULT_URL}]: ").strip().rstrip("/") or DEFAULT_URL
-    url = connect(url)
-    model = select_model(url)
-    interactive_chat(url, model)
+    import sys
+    api_key = input("Paste your Google AI Studio API key: ").strip()
+    ok, msg = validate_api_key(api_key)
+    print(f"{'✓' if ok else '✗'} {msg}")
+    if not ok:
+        sys.exit(1)
+
+    client = make_client(api_key)
+    image_path = input("Image path to test: ").strip()
+
+    print("\n── Step 1: Transcribing ──")
+    img_bytes, mtype = encode_image_file(image_path)
+    img_bytes = compress_image(img_bytes)
+    raw = transcribe_stream(client, img_bytes, mtype,
+                            on_chunk=lambda t: print(f"\r{t}", end=""))
+    print(f"\n\nRaw: {raw}")
+
+    print("\n── Step 2: Analysing + Correcting ──")
+    analysis, corrected = analyse_and_correct_stream(
+        client, raw,
+        on_analysis_chunk=lambda t: print(f"\r[ANALYSIS] {t[-80:]}", end=""),
+        on_corrected_chunk=lambda t: print(f"\r[CORRECTED] {t[-80:]}", end=""),
+    )
+    print(f"\n\nAnalysis:\n{analysis}")
+    print(f"\nCorrected:\n{corrected}")
