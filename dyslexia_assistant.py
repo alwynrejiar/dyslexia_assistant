@@ -151,6 +151,9 @@ class DyslexiaAssistant(tk.Tk):
         self.image_bytes = None
         self.image_media_type = "image/jpeg"
         self._processing = False
+        self._live_running = False
+        self._live_processing = False
+        self._live_after_job = None
         self.title("DyslexaRead — Handwriting Analyser  (Google Gemini · Free)")
         self.configure(bg=BG)
         self.minsize(1000, 660)
@@ -182,9 +185,17 @@ class DyslexiaAssistant(tk.Tk):
                  bg=PANEL, fg=TEXT_DIM, anchor="w").pack(fill="x", padx=16, pady=(14,0))
         btn_row = tk.Frame(parent, bg=PANEL)
         btn_row.pack(fill="x", padx=16, pady=4)
-        self.cam_btn = self._btn(btn_row, "📷  Camera Snapshot", self._open_camera_window,
+        
+        btn_inner = tk.Frame(btn_row, bg=PANEL)
+        btn_inner.pack(fill="x", pady=(8,4))
+        self.cam_btn = self._btn(btn_inner, "📷 Snapshot", self._open_camera_window,
                                  bg=PANEL, fg=ACCENT, relief="solid", bd=1)
-        self.cam_btn.pack(fill="x", pady=(8,4))
+        self.cam_btn.pack(side="left", fill="x", expand=True, padx=(0,2))
+        
+        self.live_btn = self._btn(btn_inner, "🔴 Live Mode", self._open_live_window,
+                                 bg=PANEL, fg=WARNING, relief="solid", bd=1)
+        self.live_btn.pack(side="left", fill="x", expand=True, padx=(2,0))
+
         self._btn(btn_row, "📁  Upload Image File", self._upload_file,
                   bg=PANEL, fg=ACCENT, relief="solid", bd=1).pack(fill="x", pady=(0,8))
         self.preview_lbl = tk.Label(parent, bg="#080f18", fg=TEXT_DIM,
@@ -343,6 +354,110 @@ class DyslexiaAssistant(tk.Tk):
         self.cam_btn.config(state="normal")
         self._set_status("Camera cancelled", TEXT_DIM)
 
+    def _open_live_window(self):
+        self._set_status("Starting Live Mode…", WARNING)
+        self.cam_btn.config(state="disabled")
+        self.live_btn.config(state="disabled")
+        self.analyse_btn.config(state="disabled")
+        self.preview_lbl.config(image="", text="Live Mode active in other window")
+        self.update_idletasks()
+        
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            self._set_status("⚠ Could not open camera", ERROR_COL)
+            self.cam_btn.config(state="normal")
+            self.live_btn.config(state="normal")
+            return
+
+        self._live_running = True
+        self._live_processing = False
+        self._cam_frame = None
+        
+        self._live_win = tk.Toplevel(self)
+        self._live_win.title("🔴 Live Tracking — Auto-analysing every 6s")
+        self._live_win.geometry("700x560")
+        self._live_win.configure(bg=BG)
+        self._live_win.resizable(False, False)
+        self._live_win.protocol("WM_DELETE_WINDOW", self._stop_live_mode)
+        
+        self._live_label = tk.Label(self._live_win, bg=PANEL)
+        self._live_label.pack(padx=15, pady=(15, 8))
+        
+        self._live_status_lbl = tk.Label(self._live_win, text="Waiting to capture first frame...",
+                                      font=("Helvetica", 14, "bold"), bg=BG, fg=SUCCESS)
+        self._live_status_lbl.pack(pady=(0, 10))
+        
+        btn_row = tk.Frame(self._live_win, bg=BG)
+        btn_row.pack(fill="x", padx=15, pady=(0, 15))
+        
+        self._live_stop_btn = self._btn(btn_row, "⏹  Stop Live Mode", self._stop_live_mode,
+                                         bg=ERROR_COL)
+        self._live_stop_btn.pack(fill="x")
+        
+        self._update_live_feed()
+        self._live_cycle_tick()
+
+    def _update_live_feed(self):
+        if not self._live_running or not self.cap: return
+        ret, frame = self.cap.read()
+        if ret:
+            self._cam_frame = frame
+            img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            img.thumbnail((660, 460))
+            imgtk = ImageTk.PhotoImage(image=img)
+            self._live_label.config(image=imgtk)
+            self._live_label.image = imgtk
+        
+        if self._live_running and hasattr(self, '_live_win') and self._live_win.winfo_exists():
+            self._live_win.after(33, self._update_live_feed)
+
+    def _stop_live_mode(self):
+        self._live_running = False
+        if self._live_after_job:
+            self.after_cancel(self._live_after_job)
+            self._live_after_job = None
+        if self.cap:
+            self.cap.release(); self.cap = None
+        if hasattr(self, '_live_win') and self._live_win.winfo_exists():
+            self._live_win.destroy()
+        self.cam_btn.config(state="normal")
+        self.live_btn.config(state="normal")
+        self.preview_lbl.config(text="No image loaded")
+        self._set_status("Live Mode stopped", TEXT_DIM)
+
+    def _live_cycle_tick(self):
+        if not self._live_running: return
+        
+        if not self._live_processing and self._cam_frame is not None:
+            self._live_processing = True
+            self._live_status_lbl.config(text="Processing frame...", fg=WARNING)
+            
+            frame = self._cam_frame
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            image_bytes, image_media_type = gemini.encode_image_bytes(buf.tobytes())
+            
+            threading.Thread(target=self._run_live_pipeline_quiet, args=(image_bytes, image_media_type), daemon=True).start()
+        
+        self._live_after_job = self.after(6000, self._live_cycle_tick)
+
+    def _run_live_pipeline_quiet(self, img, mtype):
+        try:
+            self.after(0, lambda: [self._write_tab(w, "") for w in (self.raw_txt, self.ana_txt, self.corr_txt)])
+            
+            raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
+                on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                
+            gemini.analyse_and_correct_stream(self.api_client, raw_text,
+                on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
+                on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                
+            self.after(0, lambda: self._live_status_lbl.config(text="✓ Updated tabs (Next check soon...)", fg=SUCCESS))
+        except Exception as e:
+            self.after(0, lambda: self._live_status_lbl.config(text=f"⚠ Capture error: {str(e)[:40]}", fg=ERROR_COL))
+        finally:
+            self.after(0, lambda: setattr(self, '_live_processing', False))
+
+
     def _upload_file(self):
         path = filedialog.askopenfilename(
             title="Select handwriting image",
@@ -410,6 +525,7 @@ class DyslexiaAssistant(tk.Tk):
     def _reset(self):
         if self._processing: return
         if self._cam_running: self._cancel_camera()
+        if self._live_running: self._stop_live_mode()
         self.image_bytes = None
         self.preview_lbl.config(image="", text="No image loaded")
         for w in (self.raw_txt, self.ana_txt, self.corr_txt): self._write_tab(w, "")
@@ -418,6 +534,7 @@ class DyslexiaAssistant(tk.Tk):
 
     def _on_close(self):
         if self._cam_running: self._cancel_camera()
+        if self._live_running: self._stop_live_mode()
         self.destroy()
 
 
