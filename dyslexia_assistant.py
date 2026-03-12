@@ -11,8 +11,10 @@ Requirements:
 """
 
 import io
+import json
 import os
 import threading
+from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -168,6 +170,10 @@ class DyslexiaAssistant(tk.Tk):
         tk.Label(hdr, text="◈ DyslexaRead", font=FONT_TITLE, bg=BG, fg=ACCENT).pack(side="left")
         tk.Label(hdr, text=" FREE · Google Gemini ", font=FONT_SMALL,
                  bg="#0d3320", fg=SUCCESS, padx=8, pady=4).pack(side="left", padx=12)
+                 
+        self._btn(hdr, "📂 View History", self._show_history,
+                  bg=PANEL, fg=TEXT, font=FONT_SMALL, pady=4).pack(side="left", padx=12)
+                  
         self.status_lbl = tk.Label(hdr, text="Ready", font=FONT_SMALL, bg=BG, fg=TEXT_DIM)
         self.status_lbl.pack(side="right")
         tk.Frame(self, bg=ACCENT, height=2).pack(fill="x")
@@ -233,6 +239,12 @@ class DyslexiaAssistant(tk.Tk):
         self.ana_txt  = make_tab("  🔍  Error Analysis  ",   ANA_BG)
         self.corr_txt = make_tab("  ✅  Corrected Text  ",   COR_BG)
         self.notebook = nb
+        
+        btn_frame = tk.Frame(parent, bg=BG)
+        btn_frame.pack(fill="x", padx=4, pady=4)
+        self.save_btn = self._btn(btn_frame, "💾  Save to Profile", self._save_current_session,
+                                  bg=PANEL, fg=ACCENT)
+        self.save_btn.pack(side="right")
 
     def _btn(self, parent, text, cmd, bg=ACCENT, fg="white",
              font=FONT_BOLD, relief="flat", bd=0, pady=8, state="normal"):
@@ -392,7 +404,11 @@ class DyslexiaAssistant(tk.Tk):
         
         self._live_stop_btn = self._btn(btn_row, "⏹  Stop Live Mode", self._stop_live_mode,
                                          bg=ERROR_COL)
-        self._live_stop_btn.pack(fill="x")
+        self._live_stop_btn.pack(side="right", expand=True, fill="x", padx=(6, 0))
+        
+        self._live_save_btn = self._btn(btn_row, "💾 Save Frame & Text to Profile", self._save_current_session,
+                                        bg=PANEL, fg=ACCENT, relief="solid", bd=1)
+        self._live_save_btn.pack(side="left", expand=True, fill="x", padx=(0, 6))
         
         self._update_live_feed()
         self._live_cycle_tick()
@@ -521,6 +537,128 @@ class DyslexiaAssistant(tk.Tk):
         self.analyse_btn.config(state="normal", text="🚀  Transcribe & Analyse")
         self._set_status(f"Error: {msg}", ERROR_COL)
         messagebox.showerror("Analysis Failed", msg)
+
+    def _get_tab_text(self, widget):
+        return widget.get("1.0", "end-1c").strip()
+        
+    def _save_current_session(self):
+        if not self.image_bytes:
+            messagebox.showerror("No Image", "You must load or capture an image before saving.")
+            return
+            
+        raw = self._get_tab_text(self.raw_txt)
+        corr = self._get_tab_text(self.corr_txt)
+        if not raw and not corr:
+            messagebox.showerror("No Text", "There is no analysis text to save yet.")
+            return
+
+        profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles", "default")
+        os.makedirs(profile_dir, exist_ok=True)
+        
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        img_filename = f"img_{run_id}.jpg"
+        img_path = os.path.join(profile_dir, img_filename)
+        
+        with open(img_path, "wb") as f:
+            f.write(self.image_bytes)
+            
+        session_data = {
+            "id": run_id,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "image_path": f"profiles/default/{img_filename}",
+            "raw_text": raw,
+            "analysis": self._get_tab_text(self.ana_txt),
+            "corrected_text": corr
+        }
+        
+        json_path = os.path.join(profile_dir, "sessions.json")
+        data = []
+        if os.path.exists(json_path):
+            with open(json_path, "r", encoding="utf-8") as f:
+                try: data = json.load(f)
+                except json.JSONDecodeError: pass
+                
+        data.append(session_data)
+        
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+        self._set_status(f"Saved session to profile {run_id}", SUCCESS)
+        if hasattr(self, '_live_win') and self._live_win.winfo_exists():
+            self._live_status_lbl.config(text=f"💾 Saved to profile!", fg=SUCCESS)
+
+    def _show_history(self):
+        json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles", "default", "sessions.json")
+        if not os.path.exists(json_path):
+            messagebox.showinfo("History", "No saved sessions found in your profile yet.")
+            return
+            
+        with open(json_path, "r", encoding="utf-8") as f:
+            sessions = json.load(f)
+            
+        if not sessions:
+            messagebox.showinfo("History", "Profile is empty.")
+            return
+            
+        sessions.reverse() # Newest first
+
+        hist_win = tk.Toplevel(self)
+        hist_win.title("📂 Profile History")
+        hist_win.geometry("500x600")
+        hist_win.configure(bg=BG)
+        hist_win.transient(self)
+        
+        tk.Label(hist_win, text="Saved Sessions", font=FONT_TITLE, bg=BG, fg=TEXT).pack(pady=15)
+        tk.Label(hist_win, text="Click a session to load it into the main viewer.", 
+                 bg=BG, fg=TEXT_DIM, font=FONT_BODY).pack(pady=(0,10))
+        
+        frame = tk.Frame(hist_win, bg=PANEL)
+        frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        scrollbar = ttk.Scrollbar(frame)
+        scrollbar.pack(side="right", fill="y")
+        
+        listbox = tk.Listbox(frame, bg=PANEL, fg=TEXT, font=FONT_BODY,
+                             selectbackground=ACCENT, relief="flat", highlightthickness=0,
+                             yscrollcommand=scrollbar.set)
+        listbox.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+        scrollbar.config(command=listbox.yview)
+        
+        for sess in sessions:
+            preview = sess.get("corrected_text", "")[:40].replace("\n", " ") + "..."
+            listbox.insert("end", f"{sess['timestamp']} — {preview}")
+            
+        def _load_selected():
+            idx = listbox.curselection()
+            if not idx: return
+            sess = sessions[idx[0]]
+            
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            img_abs_path = os.path.join(base_dir, sess["image_path"])
+            
+            if os.path.exists(img_abs_path):
+                try:
+                    with open(img_abs_path, "rb") as bf:
+                        self.image_bytes = bf.read()
+                    self.image_media_type = "image/jpeg"
+                    img = Image.open(io.BytesIO(self.image_bytes))
+                    img.thumbnail((380, 260))
+                    imgtk = ImageTk.PhotoImage(image=img)
+                    self.preview_lbl.config(image=imgtk, text="")
+                    self.preview_lbl.image = imgtk
+                except Exception as e:
+                    print(f"Failed to load image: {e}")
+            else:
+                self.preview_lbl.config(image="", text="[Image missing from disk]")
+                
+            self._write_tab(self.raw_txt, sess.get("raw_text", ""))
+            self._write_tab(self.ana_txt, sess.get("analysis", ""))
+            self._write_tab(self.corr_txt, sess.get("corrected_text", ""))
+            
+            self._set_status(f"Loaded history from {sess['timestamp']}", SUCCESS)
+            hist_win.destroy()
+            
+        self._btn(hist_win, "Load Selected Session", _load_selected, bg=ACCENT).pack(pady=(0, 20), padx=20, fill="x")
 
     def _reset(self):
         if self._processing: return
