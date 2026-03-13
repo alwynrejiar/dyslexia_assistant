@@ -26,7 +26,7 @@ Powered by the **Google Gemini 2.5 Flash** vision model via the **Google AI Stud
 
 Install the required Python packages:
 ```bash
-pip install google-genai opencv-python Pillow python-dotenv
+pip install google-genai opencv-python Pillow python-dotenv anthropic
 ```
 *(Note: `tkinter` is used for the GUI and is included with standard Python installations).*
 

@@ -50,6 +50,32 @@ FONT_TITLE = ("Helvetica", 20, "bold")
 FONT_SMALL = ("Helvetica", 11)
 
 
+def save_api_key_to_env(key: str, env_var: str = "GEMINI_API_KEY"):
+    try:
+        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        env_lines = []
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                env_lines = f.readlines()
+        
+        updated = False
+        for i, line in enumerate(env_lines):
+            if line.strip().startswith(f"{env_var}="):
+                env_lines[i] = f"{env_var}={key}\n"
+                updated = True
+                break
+        
+        if not updated:
+            if env_lines and not env_lines[-1].endswith("\n"):
+                env_lines.append("\n")
+            env_lines.append(f"{env_var}={key}\n")
+            
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(env_lines)
+    except Exception as e:
+        print(f"Failed to save {env_var} to .env: {e}")
+
+
 class SetupDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
@@ -73,13 +99,22 @@ class SetupDialog(tk.Toplevel):
         tk.Label(self, text="Dyslexia Handwriting Analyser  ·  Powered by Google Gemini",
                  font=FONT_SMALL, bg=BG, fg=TEXT_DIM).pack(pady=(0,6))
 
-        badge = tk.Frame(self, bg="#0d3320")
-        badge.pack(pady=(0,18))
-        tk.Label(badge, text="  ✅  FREE — Google AI Studio free tier  ",
-                 font=FONT_SMALL, bg="#0d3320", fg=SUCCESS, padx=12, pady=6).pack()
+        tk.Label(self, text="Select API Provider:", font=FONT_SMALL, bg=BG, fg=TEXT_DIM).pack(pady=(0, 2))
+        self.provider_var = tk.StringVar(value="Google Gemini")
+        provider_combo = ttk.Combobox(self, textvariable=self.provider_var, 
+                                      values=["Google Gemini", "Anthropic Claude"], state="readonly", font=FONT_BODY)
+        provider_combo.pack(pady=(0, 10))
+        provider_combo.bind("<<ComboboxSelected>>", self._on_provider_change)
 
-        tk.Label(self, text="Google AI Studio API Key", font=FONT_BOLD,
-                 bg=BG, fg=TEXT, anchor="w").pack(fill="x", **pad)
+        self.badge_frame = tk.Frame(self, bg="#0d3320")
+        self.badge_frame.pack(pady=(0,10))
+        self.badge_lbl = tk.Label(self.badge_frame, text="  ✅  FREE — Google AI Studio free tier  ",
+                                  font=FONT_SMALL, bg="#0d3320", fg=SUCCESS, padx=12, pady=6)
+        self.badge_lbl.pack()
+
+        self.key_lbl = tk.Label(self, text="Google AI Studio API Key", font=FONT_BOLD,
+                                bg=BG, fg=TEXT, anchor="w")
+        self.key_lbl.pack(fill="x", **pad)
 
         self.key_var = tk.StringVar()
         key_entry = tk.Entry(self, textvariable=self.key_var, show="•",
@@ -88,18 +123,19 @@ class SetupDialog(tk.Toplevel):
         key_entry.pack(**pad)
         key_entry.bind("<Return>", lambda _: self._connect())
 
-        help_frame = tk.Frame(self, bg=PANEL, padx=14, pady=10)
-        help_frame.pack(fill="x", padx=28, pady=(0,10))
-        tk.Label(help_frame, text="How to get your FREE key:", font=FONT_BOLD,
-                 bg=PANEL, fg=TEXT).pack(anchor="w")
-        for step in [
-            "1. Go to  aistudio.google.com",
-            "2. Sign in with your Google account",
-            "3. Click 'Get API Key' → 'Create API Key'",
-            "4. Copy the key (starts with AIza...) and paste above",
-        ]:
-            tk.Label(help_frame, text=step, font=FONT_SMALL,
-                     bg=PANEL, fg=TEXT_DIM, anchor="w").pack(anchor="w")
+        self.help_frame = tk.Frame(self, bg=PANEL, padx=14, pady=10)
+        self.help_frame.pack(fill="x", padx=28, pady=(0,10))
+        self.help_title = tk.Label(self.help_frame, text="How to get your FREE key:", font=FONT_BOLD,
+                                   bg=PANEL, fg=TEXT)
+        self.help_title.pack(anchor="w")
+        
+        self.help_steps = []
+        for i in range(4):
+            lbl = tk.Label(self.help_frame, text="", font=FONT_SMALL, bg=PANEL, fg=TEXT_DIM, anchor="w")
+            lbl.pack(anchor="w")
+            self.help_steps.append(lbl)
+            
+        self._update_help_text()
 
         self.status_var = tk.StringVar(value="Enter your free API key above")
         self.status_lbl = tk.Label(self, textvariable=self.status_var,
@@ -115,22 +151,61 @@ class SetupDialog(tk.Toplevel):
         tk.Button(btn_frame, text="Cancel", font=FONT_BODY, bg=PANEL, fg=TEXT_DIM,
             relief="flat", padx=12, pady=10, cursor="hand2", command=self._cancel).pack(side="left")
 
+    def _update_help_text(self):
+        provider = self.provider_var.get()
+        if provider == "Google Gemini":
+            self.badge_frame.config(bg="#0d3320")
+            self.badge_lbl.config(text="  ✅  FREE — Google AI Studio free tier  ", bg="#0d3320", fg=SUCCESS)
+            self.key_lbl.config(text="Google AI Studio API Key")
+            self.help_title.config(text="How to get your FREE key:")
+            steps = [
+                "1. Go to  aistudio.google.com",
+                "2. Sign in with your Google account",
+                "3. Click 'Get API Key' → 'Create API Key'",
+                "4. Copy the key (starts with AIza...) and paste above"
+            ]
+        else:
+            self.badge_frame.config(bg="#3a2a0d")
+            self.badge_lbl.config(text="  💳  PAID — Anthropic Claude API  ", bg="#3a2a0d", fg=WARNING)
+            self.key_lbl.config(text="Anthropic API Key")
+            self.help_title.config(text="How to get your Claude key:")
+            steps = [
+                "1. Go to  console.anthropic.com",
+                "2. Sign in with your account",
+                "3. Go to 'API Keys' and Create Key",
+                "4. Copy the key (starts with sk-ant...) and paste above"
+            ]
+            
+        for i, step in enumerate(steps):
+            self.help_steps[i].config(text=step)
+            
+    def _on_provider_change(self, event):
+        self._update_help_text()
+        self.key_var.set("")
+        self.status_var.set("Enter your API key above")
+        self.status_lbl.config(fg=TEXT_DIM)
+
     def _connect(self):
         key = self.key_var.get().strip()
         if not key:
             self._set_status("Please enter an API key.", ERROR_COL); return
-        self._set_status("Connecting to Google AI Studio…", TEXT_DIM)
+        provider = self.provider_var.get()
+        self._set_status(f"Connecting to {provider}…", TEXT_DIM)
         self.connect_btn.config(state="disabled")
         self.update()
         def _check():
-            ok, msg = gemini.validate_api_key(key)
-            self.after(0, lambda: self._after_connect(ok, msg, key))
+            if provider == "Google Gemini":
+                ok, msg = gemini.validate_api_key(key)
+            else:
+                ok, msg = gemini.validate_claude_api_key(key)
+            self.after(0, lambda: self._after_connect(ok, msg, key, provider))
         threading.Thread(target=_check, daemon=True).start()
 
-    def _after_connect(self, ok, msg, key):
+    def _after_connect(self, ok, msg, key, provider):
         if ok:
             self._set_status(f"✓ {msg}", SUCCESS)
             self.result_key = key
+            self.result_provider = provider
             self.after(600, self.destroy)
         else:
             self._set_status(f"✗ {msg}", ERROR_COL)
@@ -144,9 +219,17 @@ class SetupDialog(tk.Toplevel):
 
 
 class DyslexiaAssistant(tk.Tk):
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, provider: str = "Google Gemini"):
         super().__init__()
-        self.api_client = gemini.make_client(api_key)
+        self.api_provider = provider
+        if provider == "Google Gemini":
+            self.api_client = gemini.make_client(api_key)
+        elif provider == "Anthropic Claude":
+            self.api_client = gemini.make_claude_client(api_key)
+        else:
+            self.api_client = None
+            
+        self.api_key = api_key
         self.cap = None
         self._cam_running = False
         self._countdown_job = None
@@ -156,7 +239,9 @@ class DyslexiaAssistant(tk.Tk):
         self._live_running = False
         self._live_processing = False
         self._live_after_job = None
-        self.title("DyslexaRead — Handwriting Analyser  (Google Gemini · Free)")
+        
+        title_suffix = f"({provider})" if provider else "(Google Gemini · Free)"
+        self.title(f"DyslexaRead — Handwriting Analyser {title_suffix}")
         self.configure(bg=BG)
         self.minsize(1000, 660)
         self._build_ui()
@@ -173,6 +258,9 @@ class DyslexiaAssistant(tk.Tk):
                  
         self._btn(hdr, "📂 View History", self._show_history,
                   bg=PANEL, fg=TEXT, font=FONT_SMALL, pady=4).pack(side="left", padx=12)
+                  
+        self._btn(hdr, "🔑 Change API Key", self._change_api_key,
+                  bg=PANEL, fg=WARNING, font=FONT_SMALL, pady=4).pack(side="left", padx=12)
                   
         self.status_lbl = tk.Label(hdr, text="Ready", font=FONT_SMALL, bg=BG, fg=TEXT_DIM)
         self.status_lbl.pack(side="right")
@@ -460,12 +548,18 @@ class DyslexiaAssistant(tk.Tk):
         try:
             self.after(0, lambda: [self._write_tab(w, "") for w in (self.raw_txt, self.ana_txt, self.corr_txt)])
             
-            raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
-                on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
-                
-            gemini.analyse_and_correct_stream(self.api_client, raw_text,
-                on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+            if self.api_provider == "Anthropic Claude":
+                raw_text = gemini.transcribe_stream_claude(self.api_client, img, mtype,
+                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                gemini.analyse_and_correct_stream_claude(self.api_client, raw_text,
+                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+            else:
+                raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
+                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                gemini.analyse_and_correct_stream(self.api_client, raw_text,
+                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
                 
             self.after(0, lambda: self._live_status_lbl.config(text="✓ Updated tabs (Next check soon...)", fg=SUCCESS))
         except Exception as e:
@@ -510,16 +604,28 @@ class DyslexiaAssistant(tk.Tk):
         img = self.image_bytes; mtype = self.image_media_type
         try:
             self.after(0, lambda: self._set_status("Step 1/2 — Transcribing handwriting…", ACCENT2))
-            raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
-                on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+            if self.api_provider == "Anthropic Claude":
+                raw_text = gemini.transcribe_stream_claude(self.api_client, img, mtype,
+                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+            else:
+                raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
+                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                    
             self.after(0, lambda: (
                 self._set_status("Step 2/2 — Analysing errors…", ACCENT2),
                 self._write_tab(self.ana_txt, "Identifying error patterns…\n"),
                 self.notebook.select(1),
             ))
-            gemini.analyse_and_correct_stream(self.api_client, raw_text,
-                on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+            
+            if self.api_provider == "Anthropic Claude":
+                gemini.analyse_and_correct_stream_claude(self.api_client, raw_text,
+                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+            else:
+                gemini.analyse_and_correct_stream(self.api_client, raw_text,
+                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                
             self.after(0, self._pipeline_done)
         except Exception as e:
             self.after(0, lambda: self._pipeline_error(str(e)))
@@ -660,6 +766,23 @@ class DyslexiaAssistant(tk.Tk):
             
         self._btn(hist_win, "Load Selected Session", _load_selected, bg=ACCENT).pack(pady=(0, 20), padx=20, fill="x")
 
+    def _change_api_key(self):
+        dialog = SetupDialog(self)
+        self.wait_window(dialog)
+        if dialog.result_key:
+            self.api_provider = dialog.result_provider
+            self.api_key = dialog.result_key
+            if self.api_provider == "Google Gemini":
+                self.api_client = gemini.make_client(dialog.result_key)
+                save_api_key_to_env(dialog.result_key, "GEMINI_API_KEY")
+            elif self.api_provider == "Anthropic Claude":
+                self.api_client = gemini.make_claude_client(dialog.result_key)
+                save_api_key_to_env(dialog.result_key, "ANTHROPIC_API_KEY")
+                
+            title_suffix = f"({self.api_provider})"
+            self.title(f"DyslexaRead — Handwriting Analyser {title_suffix}")
+            self._set_status(f"API Key updated successfully for {self.api_provider}", SUCCESS)
+
     def _reset(self):
         if self._processing: return
         if self._cam_running: self._cancel_camera()
@@ -677,16 +800,32 @@ class DyslexiaAssistant(tk.Tk):
 
 
 def main():
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    # Only fastpath start if Gemini or Claude API key exists
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    claude_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    
+    api_key = None
+    provider = "Google Gemini"
 
-    if api_key:
+    if gemini_key:
         print("Found GEMINI_API_KEY in environment, validating...")
-        ok, msg = gemini.validate_api_key(api_key)
+        ok, msg = gemini.validate_api_key(gemini_key)
         if ok:
             print(f"✓ KEY VALIDATED: {msg}")
+            api_key = gemini_key
+            provider = "Google Gemini"
         else:
             print(f"✗ KEY INVALID ({msg}), falling back to UI.")
-            api_key = None
+            
+    if not api_key and claude_key:
+        print("Found ANTHROPIC_API_KEY in environment, validating...")
+        ok, msg = gemini.validate_claude_api_key(claude_key)
+        if ok:
+            print(f"✓ KEY VALIDATED: {msg}")
+            api_key = claude_key
+            provider = "Anthropic Claude"
+        else:
+            print(f"✗ KEY INVALID ({msg}), falling back to UI.")
 
     if not api_key:
         root = tk.Tk()
@@ -694,12 +833,16 @@ def main():
         dialog = SetupDialog(root)
         root.wait_window(dialog)
         api_key = dialog.result_key
+        provider = getattr(dialog, 'result_provider', "Google Gemini")
         root.destroy()
+        if api_key:
+            env_var = "GEMINI_API_KEY" if provider == "Google Gemini" else "ANTHROPIC_API_KEY"
+            save_api_key_to_env(api_key, env_var)
 
     if not api_key:
         return
 
-    app = DyslexiaAssistant(api_key)
+    app = DyslexiaAssistant(api_key, provider)
     app.mainloop()
 
 if __name__ == "__main__":

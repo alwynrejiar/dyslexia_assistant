@@ -14,6 +14,7 @@ Install:
 """
 
 import io
+import base64
 from pathlib import Path
 from google import genai
 from google.genai import types
@@ -61,6 +62,37 @@ def validate_api_key(api_key: str) -> tuple[bool, str]:
             return False, "Quota exceeded — wait a moment and retry"
         return False, f"Connection error: {msg[:120]}"
 
+
+def make_claude_client(api_key: str):
+    """Create and return an Anthropic Claude client."""
+    import anthropic
+    return anthropic.Anthropic(api_key=api_key)
+
+
+def validate_claude_api_key(api_key: str) -> tuple[bool, str]:
+    """
+    Test the Anthropic API key.
+    Returns (success: bool, message: str).
+    """
+    if not api_key or len(api_key) < 20 or not api_key.startswith("sk-ant"):
+        return False, "Key looks invalid — should start with sk-ant..."
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        # Make a tiny request to validate key
+        msg = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "hi"}]
+        )
+        return True, "Connected · Claude 3.5 Sonnet / Haiku"
+    except Exception as e:
+        msg = str(e)
+        if "authentication" in msg.lower() or "invalid x-api-key" in msg.lower() or "not valid" in msg.lower():
+            return False, "Invalid API key — check console.anthropic.com"
+        if "credit balance" in msg.lower() or "insufficient_quota" in msg.lower():
+            return False, "Anthropic requires prepaying (e.g. $5) to use the API. Pls fund."
+        return False, f"Connection error: {msg[:120]}"
 
 # ── Image helpers ────────────────────────────────────────────────
 
@@ -147,6 +179,56 @@ def transcribe_stream(
     return full_text.strip()
 
 
+def transcribe_stream_claude(
+    client,
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    on_chunk=None,
+    model: str = "claude-3-5-sonnet-20241022",
+) -> str:
+    """Claude Step 1: Transcription"""
+    import anthropic
+    b64_img = base64.b64encode(image_bytes).decode('utf-8')
+    prompt = (
+        "You are an expert at reading dysgraphic and dyslexic handwriting. "
+        "Transcribe the handwritten text in this image EXACTLY as written. "
+        "Preserve every misspelling, reversed letter, phonetic spelling, "
+        "omission, transposition, capitalisation error, and spacing error. "
+        "Do NOT autocorrect or fix anything — accurate error preservation is "
+        "essential for diagnosing the writer's dyslexia/dysgraphia. "
+        "Output ONLY the raw transcription, no commentary or explanation."
+    )
+    full_text = ""
+    with client.messages.stream(
+        max_tokens=1500,
+        model=model,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64_img
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+    ) as stream:
+        for text in stream.text_stream:
+            full_text += text
+            if on_chunk:
+                on_chunk(full_text)
+                
+    return full_text.strip()
+
 # ── Step 2: Error Analysis + Correction ─────────────────────────
 
 def analyse_and_correct_stream(
@@ -226,6 +308,65 @@ def analyse_and_correct_stream(
 
     return extract("analysis"), extract("corrected")
 
+
+def analyse_and_correct_stream_claude(
+    client,
+    raw_transcription: str,
+    on_analysis_chunk=None,
+    on_corrected_chunk=None,
+    model: str = "claude-3-5-sonnet-20241022",
+) -> tuple[str, str]:
+    """Claude Step 2: Analysis + Correction"""
+    import anthropic
+    prompt = (
+        f"The following text was transcribed from a handwriting sample written by "
+        f"someone with dyslexia or dysgraphia. The transcription preserves all "
+        f"original errors:\n\n"
+        f"<raw_transcription>\n{raw_transcription}\n</raw_transcription>\n\n"
+        f"Respond in EXACTLY this format, with no extra text outside the tags:\n\n"
+        f"<analysis>\n"
+        f"For each error, write one bullet:\n"
+        f"• Written: [word as written] → Intended: [correct word] · "
+        f"Type: [REV=reversal / PHON=phonetic / OMIT=omission / "
+        f"TRANS=transposition / CAP=capitalisation / SPACE=spacing / "
+        f"SUB=substitution / ADD=addition / OTHER]\n\n"
+        f"End with a short Summary paragraph describing the overall "
+        f"dyslexia/dysgraphia indicators observed.\n"
+        f"</analysis>\n\n"
+        f"<corrected>\n"
+        f"[The fully corrected text. Fix all errors. Preserve the author's "
+        f"original meaning, tone, and voice exactly.]\n"
+        f"</corrected>"
+    )
+    
+    full_text = ""
+    with client.messages.stream(
+        max_tokens=2500,
+        model=model,
+        messages=[{"role": "user", "content": prompt}]
+    ) as stream:
+        for text in stream.text_stream:
+            full_text += text
+            if "<analysis>" in full_text:
+                a_start = full_text.find("<analysis>") + len("<analysis>")
+                a_end = full_text.find("</analysis>") if "</analysis>" in full_text else len(full_text)
+                partial = full_text[a_start:a_end].strip()
+                if partial and on_analysis_chunk:
+                    on_analysis_chunk(partial)
+            if "<corrected>" in full_text:
+                c_start = full_text.find("<corrected>") + len("<corrected>")
+                c_end = full_text.find("</corrected>") if "</corrected>" in full_text else len(full_text)
+                partial = full_text[c_start:c_end].strip()
+                if partial and on_corrected_chunk:
+                    on_corrected_chunk(partial)
+                    
+    def extract(tag):
+        start = full_text.find(f"<{tag}>")
+        end   = full_text.find(f"</{tag}>")
+        if start == -1: return ""
+        return full_text[start + len(f"<{tag}>") : end if end != -1 else len(full_text)].strip()
+
+    return extract("analysis"), extract("corrected")
 
 # ── Standalone test ──────────────────────────────────────────────
 
