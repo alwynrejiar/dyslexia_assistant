@@ -13,10 +13,25 @@ Requirements:
 import io
 import json
 import os
+import queue
 import threading
 from datetime import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
+
+_main_queue = queue.Queue()
+
+def run_in_main_thread(func, *args, **kwargs):
+    _main_queue.put((func, args, kwargs))
+
+def process_queue(root):
+    while not _main_queue.empty():
+        try:
+            func, args, kwargs = _main_queue.get_nowait()
+            func(*args, **kwargs)
+        except queue.Empty:
+            break
+    root.after(50, lambda: process_queue(root))
 
 import cv2
 from PIL import Image, ImageTk
@@ -86,6 +101,7 @@ class SetupDialog(tk.Toplevel):
         self._build()
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._cancel)
+        process_queue(self)
         self.after(100, self._center)
 
     def _center(self):
@@ -198,7 +214,7 @@ class SetupDialog(tk.Toplevel):
                 ok, msg = gemini.validate_api_key(key)
             else:
                 ok, msg = gemini.validate_claude_api_key(key)
-            self.after(0, lambda: self._after_connect(ok, msg, key, provider))
+            run_in_main_thread(lambda: self._after_connect(ok, msg, key, provider))
         threading.Thread(target=_check, daemon=True).start()
 
     def _after_connect(self, ok, msg, key, provider):
@@ -248,6 +264,7 @@ class DyslexiaAssistant(tk.Tk):
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         self.geometry(f"1100x720+{(sw-1100)//2}+{(sh-720)//2}")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        process_queue(self)
 
     def _build_ui(self):
         hdr = tk.Frame(self, bg=BG, pady=14)
@@ -434,7 +451,7 @@ class DyslexiaAssistant(tk.Tk):
             img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             img.thumbnail((380, 260))
             imgtk = ImageTk.PhotoImage(image=img)
-            self.preview_lbl.config(image=imgtk, text="")
+            self.preview_lbl.config(image=imgtk, text="", width=380, height=260)
             self.preview_lbl.image = imgtk
             self.analyse_btn.config(state="normal")
             self._set_status("Photo captured — ready to analyse", SUCCESS)
@@ -459,7 +476,7 @@ class DyslexiaAssistant(tk.Tk):
         self.cam_btn.config(state="disabled")
         self.live_btn.config(state="disabled")
         self.analyse_btn.config(state="disabled")
-        self.preview_lbl.config(image="", text="Live Mode active in other window")
+        self.preview_lbl.config(image="", text="Live Mode active in other window", width=36, height=12)
         self.update_idletasks()
         
         self.cap = cv2.VideoCapture(0)
@@ -526,7 +543,7 @@ class DyslexiaAssistant(tk.Tk):
             self._live_win.destroy()
         self.cam_btn.config(state="normal")
         self.live_btn.config(state="normal")
-        self.preview_lbl.config(text="No image loaded")
+        self.preview_lbl.config(image="", text="No image loaded", width=36, height=12)
         self._set_status("Live Mode stopped", TEXT_DIM)
 
     def _live_cycle_tick(self):
@@ -546,26 +563,26 @@ class DyslexiaAssistant(tk.Tk):
 
     def _run_live_pipeline_quiet(self, img, mtype):
         try:
-            self.after(0, lambda: [self._write_tab(w, "") for w in (self.raw_txt, self.ana_txt, self.corr_txt)])
+            run_in_main_thread(lambda: [self._write_tab(w, "") for w in (self.raw_txt, self.ana_txt, self.corr_txt)])
             
             if self.api_provider == "Anthropic Claude":
                 raw_text = gemini.transcribe_stream_claude(self.api_client, img, mtype,
-                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                    on_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.raw_txt, t)))
                 gemini.analyse_and_correct_stream_claude(self.api_client, raw_text,
-                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                    on_analysis_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.corr_txt, t)))
             else:
                 raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
-                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                    on_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.raw_txt, t)))
                 gemini.analyse_and_correct_stream(self.api_client, raw_text,
-                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                    on_analysis_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.corr_txt, t)))
                 
-            self.after(0, lambda: self._live_status_lbl.config(text="✓ Updated tabs (Next check soon...)", fg=SUCCESS))
+            run_in_main_thread(lambda: self._live_status_lbl.config(text="✓ Updated tabs (Next check soon...)", fg=SUCCESS))
         except Exception as e:
-            self.after(0, lambda: self._live_status_lbl.config(text=f"⚠ Capture error: {str(e)[:40]}", fg=ERROR_COL))
+            run_in_main_thread(lambda: self._live_status_lbl.config(text=f"⚠ Capture error: {str(e)[:40]}", fg=ERROR_COL))
         finally:
-            self.after(0, lambda: setattr(self, '_live_processing', False))
+            run_in_main_thread(lambda: setattr(self, '_live_processing', False))
 
 
     def _upload_file(self):
@@ -582,7 +599,7 @@ class DyslexiaAssistant(tk.Tk):
             self.image_media_type = "image/jpeg"
             img.thumbnail((380, 260))
             imgtk = ImageTk.PhotoImage(image=img)
-            self.preview_lbl.config(image=imgtk, text="")
+            self.preview_lbl.config(image=imgtk, text="", width=380, height=260)
             self.preview_lbl.image = imgtk
             self._set_status(f"Loaded: {os.path.basename(path)}", SUCCESS)
             self.analyse_btn.config(state="normal")
@@ -603,15 +620,15 @@ class DyslexiaAssistant(tk.Tk):
     def _pipeline_thread(self):
         img = self.image_bytes; mtype = self.image_media_type
         try:
-            self.after(0, lambda: self._set_status("Step 1/2 — Transcribing handwriting…", ACCENT2))
+            run_in_main_thread(lambda: self._set_status("Step 1/2 — Transcribing handwriting…", ACCENT2))
             if self.api_provider == "Anthropic Claude":
                 raw_text = gemini.transcribe_stream_claude(self.api_client, img, mtype,
-                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                    on_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.raw_txt, t)))
             else:
                 raw_text = gemini.transcribe_stream(self.api_client, img, mtype,
-                    on_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.raw_txt, t)))
+                    on_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.raw_txt, t)))
                     
-            self.after(0, lambda: (
+            run_in_main_thread(lambda: (
                 self._set_status("Step 2/2 — Analysing errors…", ACCENT2),
                 self._write_tab(self.ana_txt, "Identifying error patterns…\n"),
                 self.notebook.select(1),
@@ -619,16 +636,16 @@ class DyslexiaAssistant(tk.Tk):
             
             if self.api_provider == "Anthropic Claude":
                 gemini.analyse_and_correct_stream_claude(self.api_client, raw_text,
-                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                    on_analysis_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.corr_txt, t)))
             else:
                 gemini.analyse_and_correct_stream(self.api_client, raw_text,
-                    on_analysis_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.ana_txt, t)),
-                    on_corrected_chunk=lambda t: self.after(0, lambda t=t: self._write_tab(self.corr_txt, t)))
+                    on_analysis_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.ana_txt, t)),
+                    on_corrected_chunk=lambda t: run_in_main_thread(lambda t=t: self._write_tab(self.corr_txt, t)))
                 
-            self.after(0, self._pipeline_done)
+            run_in_main_thread(self._pipeline_done)
         except Exception as e:
-            self.after(0, lambda: self._pipeline_error(str(e)))
+            run_in_main_thread(lambda: self._pipeline_error(str(e)))
 
     def _pipeline_done(self):
         self._processing = False
@@ -658,6 +675,10 @@ class DyslexiaAssistant(tk.Tk):
             messagebox.showerror("No Text", "There is no analysis text to save yet.")
             return
 
+        profile_name = simpledialog.askstring("Save Profile", "Enter a name for this profile session:", parent=self)
+        if not profile_name:
+            return  # Cancelled
+
         profile_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles", "default")
         os.makedirs(profile_dir, exist_ok=True)
         
@@ -670,6 +691,7 @@ class DyslexiaAssistant(tk.Tk):
             
         session_data = {
             "id": run_id,
+            "name": profile_name,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "image_path": f"profiles/default/{img_filename}",
             "raw_text": raw,
@@ -689,9 +711,9 @@ class DyslexiaAssistant(tk.Tk):
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             
-        self._set_status(f"Saved session to profile {run_id}", SUCCESS)
+        self._set_status(f"Saved session '{profile_name}'", SUCCESS)
         if hasattr(self, '_live_win') and self._live_win.winfo_exists():
-            self._live_status_lbl.config(text=f"💾 Saved to profile!", fg=SUCCESS)
+            self._live_status_lbl.config(text=f"💾 Saved '{profile_name}'!", fg=SUCCESS)
 
     def _show_history(self):
         json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles", "default", "sessions.json")
@@ -731,8 +753,9 @@ class DyslexiaAssistant(tk.Tk):
         scrollbar.config(command=listbox.yview)
         
         for sess in sessions:
-            preview = sess.get("corrected_text", "")[:40].replace("\n", " ") + "..."
-            listbox.insert("end", f"{sess['timestamp']} — {preview}")
+            name = sess.get("name", "Unnamed Profile")
+            preview = sess.get("corrected_text", "")[:30].replace("\n", " ") + "..."
+            listbox.insert("end", f"[{name}] {sess['timestamp']} — {preview}")
             
         def _load_selected():
             idx = listbox.curselection()
@@ -750,21 +773,56 @@ class DyslexiaAssistant(tk.Tk):
                     img = Image.open(io.BytesIO(self.image_bytes))
                     img.thumbnail((380, 260))
                     imgtk = ImageTk.PhotoImage(image=img)
-                    self.preview_lbl.config(image=imgtk, text="")
+                    self.preview_lbl.config(image=imgtk, text="", width=380, height=260)
                     self.preview_lbl.image = imgtk
                 except Exception as e:
                     print(f"Failed to load image: {e}")
             else:
-                self.preview_lbl.config(image="", text="[Image missing from disk]")
+                self.preview_lbl.config(image="", text="[Image missing from disk]", width=36, height=12)
                 
             self._write_tab(self.raw_txt, sess.get("raw_text", ""))
             self._write_tab(self.ana_txt, sess.get("analysis", ""))
             self._write_tab(self.corr_txt, sess.get("corrected_text", ""))
             
-            self._set_status(f"Loaded history from {sess['timestamp']}", SUCCESS)
+            self._set_status(f"Loaded history '{sess.get('name', 'Unnamed')}' from {sess['timestamp']}", SUCCESS)
             hist_win.destroy()
             
-        self._btn(hist_win, "Load Selected Session", _load_selected, bg=ACCENT).pack(pady=(0, 20), padx=20, fill="x")
+        def _delete_selected():
+            idx = listbox.curselection()
+            if not idx: return
+            
+            sess = sessions[idx[0]]
+            prof_name = sess.get("name", "Unnamed Profile")
+            if not messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete profile '{prof_name}' from {sess['timestamp']}?", parent=hist_win):
+                return
+                
+            # Remove from list
+            del sessions[idx[0]]
+            
+            # Save back to JSON (note: sessions was reversed, we need to un-reverse it before saving)
+            sessions_to_save = sessions.copy()
+            sessions_to_save.reverse()
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(sessions_to_save, f, indent=2, ensure_ascii=False)
+                
+            # Try removing image file
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            img_abs_path = os.path.join(base_dir, sess["image_path"])
+            if os.path.exists(img_abs_path):
+                try:
+                    os.remove(img_abs_path)
+                except Exception as e:
+                    print(f"Failed to remove image file: {e}")
+                    
+            # Refresh history window
+            hist_win.destroy()
+            self._show_history()
+            
+        btn_row = tk.Frame(hist_win, bg=BG)
+        btn_row.pack(fill="x", padx=20, pady=(0, 20))
+        
+        self._btn(btn_row, "Load Selected Session", _load_selected, bg=ACCENT).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        self._btn(btn_row, "Delete Profile", _delete_selected, bg=ERROR_COL).pack(side="right", expand=True, fill="x", padx=(6, 0))
 
     def _change_api_key(self):
         dialog = SetupDialog(self)
@@ -788,7 +846,7 @@ class DyslexiaAssistant(tk.Tk):
         if self._cam_running: self._cancel_camera()
         if self._live_running: self._stop_live_mode()
         self.image_bytes = None
-        self.preview_lbl.config(image="", text="No image loaded")
+        self.preview_lbl.config(image="", text="No image loaded", width=36, height=12)
         for w in (self.raw_txt, self.ana_txt, self.corr_txt): self._write_tab(w, "")
         self.analyse_btn.config(state="disabled", text="🚀  Transcribe & Analyse")
         self._set_status("Ready")
