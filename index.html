@@ -1,132 +1,877 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DyslexaRead Web Assistant</title>
-  <meta name="description" content="Modern web frontend for dyslexia handwriting analysis with image capture/upload and structured AI results." />
+  <title>DyslexaRead — Handwriting Intelligence</title>
+  <meta name="description" content="AI-powered dyslexic and dysgraphic handwriting analysis. Free, fast, and built with empathy." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --cream: #f5f0e8;
+      --ink: #1a1410;
+      --ink-soft: #5c4f3d;
+      --rust: #c44b1e;
+      --rust-deep: #9e3512;
+      --gold: #d4a843;
+      --paper: #ede8dc;
+      --paper-dark: #d6cfc0;
+      --white: #faf8f4;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--cream);
+      color: var(--ink);
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 128px;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 1.2rem 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(245, 240, 232, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(26,20,16,0.08);
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: -0.02em;
+    }
+
+    .nav-logo span { color: var(--rust); }
+
+    .nav-cta {
+      background: var(--ink);
+      color: var(--cream);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.55rem 1.2rem;
+      border-radius: 999px;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .nav-cta:hover { background: var(--rust); transform: translateY(-1px); }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      padding: 8rem 3rem 5rem;
+      gap: 4rem;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .hero-text { position: relative; }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--rust);
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.8s ease forwards 0.2s;
+    }
+
+    .hero-eyebrow::before {
+      content: '';
+      display: block;
+      width: 28px;
+      height: 1.5px;
+      background: var(--rust);
+    }
+
+    .hero-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(3rem, 5.5vw, 5.5rem);
+      font-weight: 900;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+      margin-bottom: 1.5rem;
+      opacity: 0;
+      animation: fadeUp 0.9s ease forwards 0.35s;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      color: var(--rust);
+    }
+
+    .hero-sub {
+      font-size: 1.1rem;
+      font-weight: 300;
+      line-height: 1.7;
+      color: var(--ink-soft);
+      max-width: 480px;
+      margin-bottom: 2.5rem;
+      opacity: 0;
+      animation: fadeUp 0.9s ease forwards 0.5s;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      opacity: 0;
+      animation: fadeUp 0.9s ease forwards 0.65s;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--rust);
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1rem;
+      font-weight: 500;
+      padding: 0.9rem 2rem;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 20px rgba(196,75,30,0.3);
+    }
+
+    .btn-primary:hover {
+      background: var(--rust-deep);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(196,75,30,0.4);
+    }
+
+    .btn-primary svg { transition: transform 0.2s; }
+    .btn-primary:hover svg { transform: translateX(3px); }
+
+    .btn-ghost {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--ink-soft);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-bottom: 1px solid transparent;
+      padding-bottom: 1px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    .btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
+
+    /* ── HERO VISUAL ── */
+    .hero-visual {
+      position: relative;
+      opacity: 0;
+      animation: fadeIn 1.2s ease forwards 0.7s;
+    }
+
+    .card-stack {
+      position: relative;
+      height: 480px;
+    }
+
+    .card {
+      position: absolute;
+      background: var(--white);
+      border: 1px solid rgba(26,20,16,0.1);
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(26,20,16,0.12);
+      overflow: hidden;
+    }
+
+    .card-back {
+      width: 88%;
+      height: 420px;
+      top: 30px;
+      right: -20px;
+      transform: rotate(3.5deg);
+      background: var(--paper);
+      opacity: 0.7;
+    }
+
+    .card-main {
+      width: 90%;
+      height: 440px;
+      top: 0;
+      left: 0;
+      padding: 1.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid rgba(26,20,16,0.08);
+    }
+
+    .card-tag {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--rust);
+      background: rgba(196,75,30,0.08);
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+    }
+
+    .card-dots { display: flex; gap: 5px; }
+    .card-dots span {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--paper-dark);
+    }
+
+    /* handwriting simulation lines */
+    .hw-lines { flex: 1; display: flex; flex-direction: column; gap: 0.9rem; padding: 0.3rem 0; }
+
+    .hw-line {
+      height: 2px;
+      border-radius: 2px;
+      background: rgba(26,20,16,0.12);
+      position: relative;
+      overflow: visible;
+    }
+
+    .hw-line::after {
+      content: '';
+      position: absolute;
+      top: -6px;
+      left: 0;
+      right: 0;
+      height: 14px;
+      background: repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 3px,
+        rgba(26,20,16,0.06) 3px,
+        rgba(26,20,16,0.06) 4px
+      );
+    }
+
+    /* animated writing effect */
+    .hw-word {
+      display: inline-block;
+      height: 18px;
+      border-radius: 3px;
+      background: var(--ink);
+      position: absolute;
+      top: -8px;
+      opacity: 0.75;
+    }
+
+    .result-box {
+      background: rgba(196,75,30,0.05);
+      border: 1px solid rgba(196,75,30,0.15);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .result-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--rust);
+      margin-bottom: 0.5rem;
+    }
+
+    .result-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+    .tag {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--ink-soft);
+      border: 1px solid var(--paper-dark);
+    }
+
+    .tag.highlight {
+      background: rgba(196,75,30,0.1);
+      color: var(--rust-deep);
+      border-color: rgba(196,75,30,0.2);
+    }
+
+    /* floating badge */
+    .badge-float {
+      position: absolute;
+      bottom: -18px;
+      right: 10px;
+      background: var(--ink);
+      color: var(--cream);
+      border-radius: 14px;
+      padding: 0.8rem 1rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 8px 24px rgba(26,20,16,0.2);
+      white-space: nowrap;
+    }
+
+    .badge-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 0 3px rgba(74,222,128,0.2);
+      animation: pulse-green 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-green {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(74,222,128,0.2); }
+      50% { box-shadow: 0 0 0 6px rgba(74,222,128,0.1); }
+    }
+
+    /* ── STATS BAR ── */
+    .stats {
+      background: var(--ink);
+      padding: 2.5rem 3rem;
+    }
+
+    .stats-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.8rem;
+      font-weight: 900;
+      color: var(--cream);
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .stat-num span { color: var(--gold); }
+
+    .stat-label {
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: rgba(245,240,232,0.5);
+      margin-top: 0.4rem;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── HOW IT WORKS ── */
+    .section {
+      padding: 7rem 3rem;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .section-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--rust);
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 3.5vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      color: var(--ink);
+      margin-bottom: 3.5rem;
+      max-width: 520px;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      position: relative;
+    }
+
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 28px;
+      left: calc(33% - 20px);
+      right: calc(33% - 20px);
+      height: 1px;
+      background: linear-gradient(90deg, var(--rust) 0%, var(--gold) 50%, var(--rust) 100%);
+      opacity: 0.3;
+    }
+
+    .step {
+      background: var(--white);
+      border: 1px solid rgba(26,20,16,0.08);
+      border-radius: 18px;
+      padding: 2rem;
+      transition: transform 0.25s, box-shadow 0.25s;
+    }
+
+    .step:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 40px rgba(26,20,16,0.1);
+    }
+
+    .step-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.5rem;
+      font-weight: 900;
+      color: var(--paper-dark);
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+
+    .step-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      background: rgba(196,75,30,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.2rem;
+      font-size: 1.4rem;
+    }
+
+    .step h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 0.6rem;
+      letter-spacing: -0.01em;
+    }
+
+    .step p {
+      font-size: 0.9rem;
+      line-height: 1.7;
+      color: var(--ink-soft);
+    }
+
+    /* ── FEATURES ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+    }
+
+    .feature {
+      background: var(--white);
+      border: 1px solid rgba(26,20,16,0.08);
+      border-radius: 18px;
+      padding: 2rem;
+      display: flex;
+      gap: 1.2rem;
+      align-items: flex-start;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .feature:hover {
+      transform: translateY(-2px);
+      border-color: rgba(196,75,30,0.2);
+    }
+
+    .feature-icon {
+      flex-shrink: 0;
+      width: 44px; height: 44px;
+      border-radius: 10px;
+      background: rgba(196,75,30,0.07);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+
+    .feature h4 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 0.4rem;
+    }
+
+    .feature p {
+      font-size: 0.875rem;
+      line-height: 1.65;
+      color: var(--ink-soft);
+    }
+
+    /* ── CTA SECTION ── */
+    .cta-section {
+      background: var(--ink);
+      padding: 7rem 3rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: -120px; left: 50%;
+      transform: translateX(-50%);
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(196,75,30,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-section .section-eyebrow { color: var(--gold); }
+
+    .cta-title {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.2rem, 4vw, 3.8rem);
+      font-weight: 900;
+      color: var(--cream);
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      margin-bottom: 1.5rem;
+    }
+
+    .cta-title em { color: var(--rust); font-style: italic; }
+
+    .cta-sub {
+      font-size: 1.05rem;
+      font-weight: 300;
+      color: rgba(245,240,232,0.6);
+      margin-bottom: 3rem;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.7;
+    }
+
+    .btn-large {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.7rem;
+      background: var(--rust);
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 500;
+      padding: 1.1rem 2.5rem;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 6px 30px rgba(196,75,30,0.4);
+      letter-spacing: 0.01em;
+    }
+
+    .btn-large:hover {
+      background: var(--rust-deep);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(196,75,30,0.5);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #110e0a;
+      padding: 2rem 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: rgba(245,240,232,0.6);
+    }
+
+    .footer-logo span { color: var(--rust); }
+
+    footer p {
+      font-size: 0.8rem;
+      color: rgba(245,240,232,0.3);
+    }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; padding-top: 7rem; }
+      .hero-visual { display: none; }
+      .steps { grid-template-columns: 1fr; }
+      .steps::before { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+      .stats-inner { grid-template-columns: 1fr; gap: 1.5rem; }
+      nav { padding: 1rem 1.5rem; }
+      .section { padding: 5rem 1.5rem; }
+      footer { flex-direction: column; gap: 0.5rem; text-align: center; }
+    }
+  </style>
 </head>
 <body>
-  <div class="page-bg" aria-hidden="true"></div>
 
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div>
-        <p class="eyebrow">DyslexaRead</p>
-        <h1>Handwriting Assistant</h1>
+  <!-- NAV -->
+  <nav>
+    <div class="nav-logo">Dyslexa<span>Read</span></div>
+    <a href="https://dyslexia-assistant.onrender.com/" class="nav-cta">Open App →</a>
+  </nav>
+
+  <!-- HERO -->
+  <section style="background: var(--cream);">
+    <div class="hero">
+      <div class="hero-text">
+        <p class="hero-eyebrow">AI-powered handwriting analysis</p>
+        <h1 class="hero-title">
+          Reading every<br><em>hand</em> that<br>writes.
+        </h1>
+        <p class="hero-sub">
+          DyslexaRead uses Google Gemini AI to transcribe, analyze, and correct dyslexic and dysgraphic handwriting — free, fast, and built with empathy for every learner.
+        </p>
+        <div class="hero-actions">
+          <a href="https://dyslexia-assistant.onrender.com/" class="btn-primary">
+            Get Started
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M3 8h10M9 4l4 4-4 4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <a href="#how-it-works" class="btn-ghost">
+            See how it works
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 3v8M3 9l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </div>
       </div>
-      <div class="topbar-actions">
-        <label class="debug-toggle" for="debugModeToggle">
-          <input id="debugModeToggle" type="checkbox" />
-          <span>Debug Mode</span>
-        </label>
-        <button id="saveResultsBtn" class="btn btn-secondary" type="button" disabled>Save Results</button>
+
+      <div class="hero-visual">
+        <div class="card-stack">
+          <div class="card card-back"></div>
+          <div class="card card-main">
+            <div class="card-header">
+              <span class="card-tag">Live Analysis</span>
+              <div class="card-dots">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="hw-lines">
+              <!-- simulated handwriting lines -->
+              <div class="hw-line">
+                <span class="hw-word" style="width:45px; left:0px;"></span>
+                <span class="hw-word" style="width:62px; left:54px;"></span>
+                <span class="hw-word" style="width:38px; left:125px;"></span>
+                <span class="hw-word" style="width:70px; left:172px;"></span>
+                <span class="hw-word" style="width:42px; left:251px; opacity:0.4;"></span>
+              </div>
+              <div class="hw-line">
+                <span class="hw-word" style="width:55px; left:0px;"></span>
+                <span class="hw-word" style="width:30px; left:64px;"></span>
+                <span class="hw-word" style="width:80px; left:103px;"></span>
+                <span class="hw-word" style="width:48px; left:192px;"></span>
+              </div>
+              <div class="hw-line">
+                <span class="hw-word" style="width:72px; left:0px;"></span>
+                <span class="hw-word" style="width:40px; left:81px;"></span>
+                <span class="hw-word" style="width:55px; left:130px;"></span>
+                <span class="hw-word" style="width:35px; left:194px; opacity:0.35;"></span>
+              </div>
+              <div class="hw-line">
+                <span class="hw-word" style="width:50px; left:0px;"></span>
+                <span class="hw-word" style="width:68px; left:59px;"></span>
+                <span class="hw-word" style="width:42px; left:136px;"></span>
+              </div>
+            </div>
+
+            <div class="result-box">
+              <div class="result-label">Patterns Detected</div>
+              <div class="result-tags">
+                <span class="tag highlight">b/d reversal</span>
+                <span class="tag highlight">letter transposition</span>
+                <span class="tag">phonetic spelling</span>
+                <span class="tag">word omission</span>
+                <span class="tag">inconsistent spacing</span>
+              </div>
+            </div>
+
+            <div style="background: rgba(212,168,67,0.07); border: 1px solid rgba(212,168,67,0.2); border-radius: 12px; padding: 1rem;">
+              <div class="result-label" style="color: var(--gold);">Corrected Text</div>
+              <p style="font-size: 0.88rem; color: var(--ink-soft); line-height: 1.6; font-style: italic;">"The quick brown fox jumps over the lazy dog near the old oak tree."</p>
+            </div>
+          </div>
+          <div class="badge-float">
+            <span class="badge-dot"></span>
+            Powered by Gemini 2.5 Flash
+          </div>
+        </div>
       </div>
     </div>
-  </header>
+  </section>
 
-  <main class="app-shell">
-    <section class="panel input-panel" aria-label="Image input section">
-      <h2>Input</h2>
-      <p class="panel-subtext">Capture from camera or upload a file before sending to the analysis API.</p>
-
-      <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Upload image by drag and drop">
-        <input id="fileInput" type="file" accept="image/*" hidden />
-        <p class="drop-title">Drop image here</p>
-        <p class="drop-subtitle">or</p>
-        <button id="uploadBtn" class="btn" type="button">Choose Image</button>
+  <!-- STATS -->
+  <div class="stats">
+    <div class="stats-inner">
+      <div>
+        <div class="stat-num"><span>100</span>% Free</div>
+        <div class="stat-label">Google AI Studio free tier — no credit card</div>
       </div>
-
-      <div class="camera-actions">
-        <button id="startCameraBtn" class="btn btn-secondary" type="button">Start Camera</button>
-        <button id="captureBtn" class="btn btn-secondary" type="button" disabled>Capture Snapshot</button>
-        <button id="liveModeBtn" class="btn btn-secondary" type="button" disabled>Stop Live Mode</button>
-        <button id="stopCameraBtn" class="btn btn-secondary" type="button" disabled>Stop Camera</button>
+      <div>
+        <div class="stat-num">5–<span>15</span>s</div>
+        <div class="stat-label">Average analysis time per image</div>
       </div>
-      <p class="panel-subtext">Live mode: when camera is active, the app auto-captures and analyzes a frame every 5 seconds.</p>
+      <div>
+        <div class="stat-num"><span>2</span>-Step AI</div>
+        <div class="stat-label">Transcribe first, then analyze errors</div>
+      </div>
+    </div>
+  </div>
 
-      <div class="preview-grid">
-        <div class="media-card">
-          <p>Live Camera</p>
-          <video id="cameraPreview" autoplay playsinline muted></video>
+  <!-- HOW IT WORKS -->
+  <div id="how-it-works">
+    <div class="section">
+      <p class="section-eyebrow">The process</p>
+      <h2 class="section-title">Three steps to clarity.</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div class="step-icon">📷</div>
+          <h3>Capture or Upload</h3>
+          <p>Take a photo with your camera or upload an image of any handwritten text — worksheets, notes, homework, letters.</p>
         </div>
-        <div class="media-card">
-          <p>Selected Image</p>
-          <img id="imagePreview" alt="Selected handwriting preview" />
-          <div id="previewPlaceholder" class="preview-placeholder">No image selected yet</div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div class="step-icon">🧠</div>
+          <h3>AI Transcription</h3>
+          <p>Gemini 2.5 Flash reads the handwriting exactly as written — every reversal, substitution, and omission preserved faithfully.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div class="step-icon">✨</div>
+          <h3>Error Analysis</h3>
+          <p>Patterns are categorized by type — b/d reversals, transpositions, phonetic errors — and a corrected version is produced.</p>
         </div>
       </div>
+    </div>
+  </div>
 
-      <canvas id="captureCanvas" hidden></canvas>
-
-      <div class="api-key-row">
-        <div class="api-key-head">
+  <!-- FEATURES -->
+  <div style="background: var(--paper); padding: 1px 0;">
+    <div class="section">
+      <p class="section-eyebrow">Features</p>
+      <h2 class="section-title">Everything an educator needs.</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <div class="feature-icon">📹</div>
           <div>
-            <p class="api-key-kicker">Secure Access</p>
-            <p class="api-key-title">Gemini API Key</p>
+            <h4>Live Camera Mode</h4>
+            <p>Stream your webcam and auto-capture every 5 seconds for continuous, hands-free classroom analysis.</p>
           </div>
-          <span id="apiKeyState" class="api-key-state">Not Saved</span>
         </div>
-        <p class="api-key-subtext">Insert your key, save it once, and analyze instantly. Your key stays in this browser.</p>
-        <div class="api-key-controls">
-          <div class="api-key-input-wrap">
-            <input id="geminiApiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
-            <button id="toggleApiKeyBtn" class="api-key-toggle" type="button" aria-label="Show or hide API key">Show</button>
+        <div class="feature">
+          <div class="feature-icon">📊</div>
+          <div>
+            <h4>Tabbed Results</h4>
+            <p>Raw transcription, detailed error analysis, and corrected text — all neatly separated in three tabs.</p>
           </div>
-          <button id="saveApiKeyBtn" class="btn btn-primary api-save-btn" type="button">Save Key</button>
         </div>
-        <p class="api-key-note">Tip: If empty, backend .env key will be used.</p>
-      </div>
-
-      <div class="analyze-row">
-        <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze</button>
-        <div id="loadingIndicator" class="loading-indicator" hidden>
-          <span class="loader-dot" aria-hidden="true"></span>
-          <span>Processing...</span>
+        <div class="feature">
+          <div class="feature-icon">🔑</div>
+          <div>
+            <h4>Bring Your Own Key</h4>
+            <p>Paste your Gemini API key once — it stays in your browser. Or let the server backend handle it silently.</p>
+          </div>
         </div>
-        <div class="progress-wrap" aria-live="polite">
-          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
-          <p id="statusText" class="status-text">Ready to analyze.</p>
+        <div class="feature">
+          <div class="feature-icon">💾</div>
+          <div>
+            <h4>Save Results</h4>
+            <p>Download full analysis reports as text files for records, IEPs, or sharing with specialists and parents.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <div>
+            <h4>Streaming Output</h4>
+            <p>Watch the AI's analysis appear word-by-word in real time — no waiting for a full response before reading.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🆓</div>
+          <div>
+            <h4>Completely Free</h4>
+            <p>Built on Google AI Studio's free tier. No subscriptions, no local GPU, no hidden costs — ever.</p>
+          </div>
         </div>
       </div>
-    </section>
+    </div>
+  </div>
 
-    <section class="panel results-panel" aria-label="Results section">
-      <h2>Results</h2>
-      <p class="panel-subtext">Review raw transcription, pattern analysis, and corrected text.</p>
+  <!-- CTA -->
+  <div class="cta-section">
+    <p class="section-eyebrow">Ready?</p>
+    <h2 class="cta-title">Start reading every<br><em>hand</em> that writes.</h2>
+    <p class="cta-sub">Free to use, no sign-up required. Just open the app, upload a handwriting sample, and get results in seconds.</p>
+    <a href="https://dyslexia-assistant.onrender.com/" class="btn-large">
+      Open DyslexaRead
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M3.5 9h11M10 4.5l4.5 4.5L10 13.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+  </div>
 
-      <div id="errorBanner" class="error-banner" role="alert" hidden>
-        <p class="error-title">Warning: Analysis Failed</p>
-        <p id="errorMessage" class="error-message">Something went wrong while processing your request.</p>
-        <button id="retryAnalyzeBtn" class="btn btn-secondary" type="button">Retry</button>
-      </div>
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-logo">Dyslexa<span>Read</span></div>
+    <p>Built with Google Gemini AI · Free & open source</p>
+  </footer>
 
-      <div class="tabs" role="tablist" aria-label="Result tabs">
-        <button class="tab is-active" data-tab="raw" role="tab" aria-selected="true">Raw Text</button>
-        <button class="tab" data-tab="analysis" role="tab" aria-selected="false">Error Analysis</button>
-        <button class="tab" data-tab="corrected" role="tab" aria-selected="false">Corrected Text</button>
-      </div>
-
-      <div class="tab-panels">
-        <article class="tab-panel is-active" data-panel="raw" role="tabpanel">
-          <div id="rawContent" class="content-box">Raw transcription will appear here.</div>
-        </article>
-        <article class="tab-panel" data-panel="analysis" role="tabpanel" hidden>
-          <div id="analysisContent" class="content-box">Error analysis will appear here.</div>
-        </article>
-        <article class="tab-panel" data-panel="corrected" role="tabpanel" hidden>
-          <div id="correctedContent" class="content-box">Corrected text will appear here.</div>
-        </article>
-      </div>
-    </section>
-  </main>
-
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-  <script src="script.js" defer></script>
 </body>
 </html>
