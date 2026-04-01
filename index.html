@@ -20,18 +20,18 @@
       --paper-dark: #d6cfc0;
       --white: #faf8f4;
     }
-
+ 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+ 
     html { scroll-behavior: smooth; }
-
+ 
     body {
       font-family: 'DM Sans', sans-serif;
       background: var(--cream);
       color: var(--ink);
       overflow-x: hidden;
     }
-
+ 
     /* ── NOISE TEXTURE OVERLAY ── */
     body::before {
       content: '';
@@ -44,7 +44,7 @@
       background-repeat: repeat;
       background-size: 128px;
     }
-
+ 
     /* ── NAV ── */
     nav {
       position: fixed;
@@ -58,7 +58,7 @@
       backdrop-filter: blur(12px);
       border-bottom: 1px solid rgba(26,20,16,0.08);
     }
-
+ 
     .nav-logo {
       font-family: 'Playfair Display', serif;
       font-size: 1.3rem;
@@ -66,9 +66,9 @@
       color: var(--ink);
       letter-spacing: -0.02em;
     }
-
+ 
     .nav-logo span { color: var(--rust); }
-
+ 
     .nav-cta {
       background: var(--ink);
       color: var(--cream);
@@ -81,9 +81,9 @@
       letter-spacing: 0.01em;
       transition: background 0.2s, transform 0.15s;
     }
-
+ 
     .nav-cta:hover { background: var(--rust); transform: translateY(-1px); }
-
+ 
     /* ── HERO ── */
     .hero {
       min-height: 100vh;
@@ -95,9 +95,9 @@
       max-width: 1280px;
       margin: 0 auto;
     }
-
+ 
     .hero-text { position: relative; }
-
+ 
     .hero-eyebrow {
       display: inline-flex;
       align-items: center;
@@ -112,7 +112,7 @@
       opacity: 0;
       animation: fadeUp 0.8s ease forwards 0.2s;
     }
-
+ 
     .hero-eyebrow::before {
       content: '';
       display: block;
@@ -120,7 +120,7 @@
       height: 1.5px;
       background: var(--rust);
     }
-
+ 
     .hero-title {
       font-family: 'Playfair Display', serif;
       font-size: clamp(3rem, 5.5vw, 5.5rem);
@@ -132,12 +132,12 @@
       opacity: 0;
       animation: fadeUp 0.9s ease forwards 0.35s;
     }
-
+ 
     .hero-title em {
       font-style: italic;
       color: var(--rust);
     }
-
+ 
     .hero-sub {
       font-size: 1.1rem;
       font-weight: 300;
@@ -148,7 +148,7 @@
       opacity: 0;
       animation: fadeUp 0.9s ease forwards 0.5s;
     }
-
+ 
     .hero-actions {
       display: flex;
       align-items: center;
@@ -156,7 +156,7 @@
       opacity: 0;
       animation: fadeUp 0.9s ease forwards 0.65s;
     }
-
+ 
     .btn-primary {
       display: inline-flex;
       align-items: center;
@@ -172,16 +172,16 @@
       transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
       box-shadow: 0 4px 20px rgba(196,75,30,0.3);
     }
-
+ 
     .btn-primary:hover {
       background: var(--rust-deep);
       transform: translateY(-2px);
       box-shadow: 0 8px 28px rgba(196,75,30,0.4);
     }
-
+ 
     .btn-primary svg { transition: transform 0.2s; }
     .btn-primary:hover svg { transform: translateX(3px); }
-
+ 
     .btn-ghost {
       font-size: 0.9rem;
       font-weight: 500;
@@ -194,21 +194,21 @@
       padding-bottom: 1px;
       transition: color 0.2s, border-color 0.2s;
     }
-
+ 
     .btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
-
+ 
     /* ── HERO VISUAL ── */
     .hero-visual {
       position: relative;
       opacity: 0;
       animation: fadeIn 1.2s ease forwards 0.7s;
     }
-
+ 
     .card-stack {
       position: relative;
       height: 480px;
     }
-
+ 
     .card {
       position: absolute;
       background: var(--white);
@@ -217,7 +217,7 @@
       box-shadow: 0 20px 60px rgba(26,20,16,0.12);
       overflow: hidden;
     }
-
+ 
     .card-back {
       width: 88%;
       height: 420px;
@@ -227,7 +227,7 @@
       background: var(--paper);
       opacity: 0.7;
     }
-
+ 
     .card-main {
       width: 90%;
       height: 440px;
@@ -238,7 +238,7 @@
       flex-direction: column;
       gap: 1rem;
     }
-
+ 
     .card-header {
       display: flex;
       align-items: center;
@@ -246,7 +246,7 @@
       padding-bottom: 0.8rem;
       border-bottom: 1px solid rgba(26,20,16,0.08);
     }
-
+ 
     .card-tag {
       font-family: 'DM Mono', monospace;
       font-size: 0.7rem;
@@ -257,16 +257,16 @@
       padding: 0.3rem 0.7rem;
       border-radius: 999px;
     }
-
+ 
     .card-dots { display: flex; gap: 5px; }
     .card-dots span {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--paper-dark);
     }
-
+ 
     /* handwriting simulation lines */
     .hw-lines { flex: 1; display: flex; flex-direction: column; gap: 0.9rem; padding: 0.3rem 0; }
-
+ 
     .hw-line {
       height: 2px;
       border-radius: 2px;
@@ -274,7 +274,7 @@
       position: relative;
       overflow: visible;
     }
-
+ 
     .hw-line::after {
       content: '';
       position: absolute;
@@ -290,7 +290,7 @@
         rgba(26,20,16,0.06) 4px
       );
     }
-
+ 
     /* animated writing effect */
     .hw-word {
       display: inline-block;
@@ -301,14 +301,14 @@
       top: -8px;
       opacity: 0.75;
     }
-
+ 
     .result-box {
       background: rgba(196,75,30,0.05);
       border: 1px solid rgba(196,75,30,0.15);
       border-radius: 12px;
       padding: 1rem;
     }
-
+ 
     .result-label {
       font-family: 'DM Mono', monospace;
       font-size: 0.68rem;
@@ -317,9 +317,9 @@
       color: var(--rust);
       margin-bottom: 0.5rem;
     }
-
+ 
     .result-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-
+ 
     .tag {
       font-size: 0.75rem;
       font-weight: 500;
@@ -329,13 +329,13 @@
       color: var(--ink-soft);
       border: 1px solid var(--paper-dark);
     }
-
+ 
     .tag.highlight {
       background: rgba(196,75,30,0.1);
       color: var(--rust-deep);
       border-color: rgba(196,75,30,0.2);
     }
-
+ 
     /* floating badge */
     .badge-float {
       position: absolute;
@@ -353,7 +353,7 @@
       box-shadow: 0 8px 24px rgba(26,20,16,0.2);
       white-space: nowrap;
     }
-
+ 
     .badge-dot {
       width: 8px; height: 8px;
       border-radius: 50%;
@@ -361,18 +361,18 @@
       box-shadow: 0 0 0 3px rgba(74,222,128,0.2);
       animation: pulse-green 2s ease-in-out infinite;
     }
-
+ 
     @keyframes pulse-green {
       0%, 100% { box-shadow: 0 0 0 3px rgba(74,222,128,0.2); }
       50% { box-shadow: 0 0 0 6px rgba(74,222,128,0.1); }
     }
-
+ 
     /* ── STATS BAR ── */
     .stats {
       background: var(--ink);
       padding: 2.5rem 3rem;
     }
-
+ 
     .stats-inner {
       max-width: 1280px;
       margin: 0 auto;
@@ -381,7 +381,7 @@
       gap: 2rem;
       text-align: center;
     }
-
+ 
     .stat-num {
       font-family: 'Playfair Display', serif;
       font-size: 2.8rem;
@@ -390,9 +390,9 @@
       letter-spacing: -0.03em;
       line-height: 1;
     }
-
+ 
     .stat-num span { color: var(--gold); }
-
+ 
     .stat-label {
       font-size: 0.85rem;
       font-weight: 400;
@@ -400,14 +400,14 @@
       margin-top: 0.4rem;
       letter-spacing: 0.02em;
     }
-
+ 
     /* ── HOW IT WORKS ── */
     .section {
       padding: 7rem 3rem;
       max-width: 1280px;
       margin: 0 auto;
     }
-
+ 
     .section-eyebrow {
       font-family: 'DM Mono', monospace;
       font-size: 0.72rem;
@@ -416,7 +416,7 @@
       color: var(--rust);
       margin-bottom: 1rem;
     }
-
+ 
     .section-title {
       font-family: 'Playfair Display', serif;
       font-size: clamp(2rem, 3.5vw, 3.2rem);
@@ -427,14 +427,14 @@
       margin-bottom: 3.5rem;
       max-width: 520px;
     }
-
+ 
     .steps {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 2rem;
       position: relative;
     }
-
+ 
     .steps::before {
       content: '';
       position: absolute;
@@ -445,7 +445,7 @@
       background: linear-gradient(90deg, var(--rust) 0%, var(--gold) 50%, var(--rust) 100%);
       opacity: 0.3;
     }
-
+ 
     .step {
       background: var(--white);
       border: 1px solid rgba(26,20,16,0.08);
@@ -453,12 +453,12 @@
       padding: 2rem;
       transition: transform 0.25s, box-shadow 0.25s;
     }
-
+ 
     .step:hover {
       transform: translateY(-4px);
       box-shadow: 0 16px 40px rgba(26,20,16,0.1);
     }
-
+ 
     .step-num {
       font-family: 'Playfair Display', serif;
       font-size: 2.5rem;
@@ -467,7 +467,7 @@
       line-height: 1;
       margin-bottom: 1rem;
     }
-
+ 
     .step-icon {
       width: 48px; height: 48px;
       border-radius: 12px;
@@ -478,7 +478,7 @@
       margin-bottom: 1.2rem;
       font-size: 1.4rem;
     }
-
+ 
     .step h3 {
       font-family: 'Playfair Display', serif;
       font-size: 1.2rem;
@@ -487,20 +487,20 @@
       margin-bottom: 0.6rem;
       letter-spacing: -0.01em;
     }
-
+ 
     .step p {
       font-size: 0.9rem;
       line-height: 1.7;
       color: var(--ink-soft);
     }
-
+ 
     /* ── FEATURES ── */
     .features-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 1.5rem;
     }
-
+ 
     .feature {
       background: var(--white);
       border: 1px solid rgba(26,20,16,0.08);
@@ -511,12 +511,12 @@
       align-items: flex-start;
       transition: transform 0.2s, border-color 0.2s;
     }
-
+ 
     .feature:hover {
       transform: translateY(-2px);
       border-color: rgba(196,75,30,0.2);
     }
-
+ 
     .feature-icon {
       flex-shrink: 0;
       width: 44px; height: 44px;
@@ -527,7 +527,7 @@
       justify-content: center;
       font-size: 1.2rem;
     }
-
+ 
     .feature h4 {
       font-family: 'Playfair Display', serif;
       font-size: 1.05rem;
@@ -535,13 +535,13 @@
       color: var(--ink);
       margin-bottom: 0.4rem;
     }
-
+ 
     .feature p {
       font-size: 0.875rem;
       line-height: 1.65;
       color: var(--ink-soft);
     }
-
+ 
     /* ── CTA SECTION ── */
     .cta-section {
       background: var(--ink);
@@ -550,7 +550,7 @@
       position: relative;
       overflow: hidden;
     }
-
+ 
     .cta-section::before {
       content: '';
       position: absolute;
@@ -561,9 +561,9 @@
       background: radial-gradient(circle, rgba(196,75,30,0.12) 0%, transparent 70%);
       pointer-events: none;
     }
-
+ 
     .cta-section .section-eyebrow { color: var(--gold); }
-
+ 
     .cta-title {
       font-family: 'Playfair Display', serif;
       font-size: clamp(2.2rem, 4vw, 3.8rem);
@@ -573,9 +573,9 @@
       line-height: 1.05;
       margin-bottom: 1.5rem;
     }
-
+ 
     .cta-title em { color: var(--rust); font-style: italic; }
-
+ 
     .cta-sub {
       font-size: 1.05rem;
       font-weight: 300;
@@ -586,7 +586,7 @@
       margin-right: auto;
       line-height: 1.7;
     }
-
+ 
     .btn-large {
       display: inline-flex;
       align-items: center;
@@ -603,13 +603,13 @@
       box-shadow: 0 6px 30px rgba(196,75,30,0.4);
       letter-spacing: 0.01em;
     }
-
+ 
     .btn-large:hover {
       background: var(--rust-deep);
       transform: translateY(-3px);
       box-shadow: 0 12px 40px rgba(196,75,30,0.5);
     }
-
+ 
     /* ── FOOTER ── */
     footer {
       background: #110e0a;
@@ -618,32 +618,32 @@
       justify-content: space-between;
       align-items: center;
     }
-
+ 
     .footer-logo {
       font-family: 'Playfair Display', serif;
       font-size: 1.1rem;
       font-weight: 700;
       color: rgba(245,240,232,0.6);
     }
-
+ 
     .footer-logo span { color: var(--rust); }
-
+ 
     footer p {
       font-size: 0.8rem;
       color: rgba(245,240,232,0.3);
     }
-
+ 
     /* ── ANIMATIONS ── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(24px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-
+ 
     @keyframes fadeIn {
       from { opacity: 0; }
       to   { opacity: 1; }
     }
-
+ 
     /* ── RESPONSIVE ── */
     @media (max-width: 900px) {
       .hero { grid-template-columns: 1fr; padding-top: 7rem; }
@@ -659,13 +659,13 @@
   </style>
 </head>
 <body>
-
+ 
   <!-- NAV -->
   <nav>
     <div class="nav-logo">Dyslexa<span>Read</span></div>
     <a href="https://dyslexia-assistant.onrender.com/" class="nav-cta">Open App →</a>
   </nav>
-
+ 
   <!-- HERO -->
   <section style="background: var(--cream);">
     <div class="hero">
@@ -692,7 +692,7 @@
           </a>
         </div>
       </div>
-
+ 
       <div class="hero-visual">
         <div class="card-stack">
           <div class="card card-back"></div>
@@ -730,7 +730,7 @@
                 <span class="hw-word" style="width:42px; left:136px;"></span>
               </div>
             </div>
-
+ 
             <div class="result-box">
               <div class="result-label">Patterns Detected</div>
               <div class="result-tags">
@@ -741,7 +741,7 @@
                 <span class="tag">inconsistent spacing</span>
               </div>
             </div>
-
+ 
             <div style="background: rgba(212,168,67,0.07); border: 1px solid rgba(212,168,67,0.2); border-radius: 12px; padding: 1rem;">
               <div class="result-label" style="color: var(--gold);">Corrected Text</div>
               <p style="font-size: 0.88rem; color: var(--ink-soft); line-height: 1.6; font-style: italic;">"The quick brown fox jumps over the lazy dog near the old oak tree."</p>
@@ -755,7 +755,7 @@
       </div>
     </div>
   </section>
-
+ 
   <!-- STATS -->
   <div class="stats">
     <div class="stats-inner">
@@ -773,7 +773,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- HOW IT WORKS -->
   <div id="how-it-works">
     <div class="section">
@@ -801,7 +801,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- FEATURES -->
   <div style="background: var(--paper); padding: 1px 0;">
     <div class="section">
@@ -853,7 +853,7 @@
       </div>
     </div>
   </div>
-
+ 
   <!-- CTA -->
   <div class="cta-section">
     <p class="section-eyebrow">Ready?</p>
@@ -866,12 +866,12 @@
       </svg>
     </a>
   </div>
-
+ 
   <!-- FOOTER -->
   <footer>
     <div class="footer-logo">Dyslexa<span>Read</span></div>
     <p>Built with Google Gemini AI · Free & open source</p>
   </footer>
-
+ 
 </body>
 </html>
