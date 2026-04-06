@@ -20,11 +20,10 @@
         <h1>Handwriting Assistant</h1>
       </div>
       <div class="topbar-actions">
-        <label class="debug-toggle" for="debugModeToggle">
-          <input id="debugModeToggle" type="checkbox" />
-          <span>Debug Mode</span>
-        </label>
-        <button id="saveResultsBtn" class="btn btn-secondary" type="button" disabled>Save Results</button>
+        <button id="themeToggleBtn" class="btn btn-secondary theme-toggle-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+          <span class="theme-icon" aria-hidden="true">☀️</span>
+        </button>
+        <a href="settings.html" class="btn btn-secondary">Settings</a>
       </div>
     </div>
   </header>
@@ -62,25 +61,6 @@
       </div>
 
       <canvas id="captureCanvas" hidden></canvas>
-
-      <div class="api-key-row">
-        <div class="api-key-head">
-          <div>
-            <p class="api-key-kicker">Secure Access</p>
-            <p class="api-key-title">Gemini API Key</p>
-          </div>
-          <span id="apiKeyState" class="api-key-state">Not Saved</span>
-        </div>
-        <p class="api-key-subtext">Insert your key, save it once, and analyze instantly. Your key stays in this browser.</p>
-        <div class="api-key-controls">
-          <div class="api-key-input-wrap">
-            <input id="geminiApiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
-            <button id="toggleApiKeyBtn" class="api-key-toggle" type="button" aria-label="Show or hide API key">Show</button>
-          </div>
-          <button id="saveApiKeyBtn" class="btn btn-primary api-save-btn" type="button">Save Key</button>
-        </div>
-        <p class="api-key-note">Tip: If empty, backend .env key will be used.</p>
-      </div>
 
       <div class="analyze-row">
         <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze</button>
@@ -121,6 +101,10 @@
         <article class="tab-panel" data-panel="corrected" role="tabpanel" hidden>
           <div id="correctedContent" class="content-box">Corrected text will appear here.</div>
         </article>
+      </div>
+
+      <div class="results-actions">
+        <button id="saveResultsBtn" class="btn btn-secondary" type="button" disabled>Save Results</button>
       </div>
     </section>
   </main>

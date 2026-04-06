@@ -28,8 +28,8 @@
     loadingIndicator: document.getElementById("loadingIndicator"),
     progressBar: document.getElementById("progressBar"),
     statusText: document.getElementById("statusText"),
+    themeToggleBtn: document.getElementById("themeToggleBtn"),
     saveResultsBtn: document.getElementById("saveResultsBtn"),
-    debugModeToggle: document.getElementById("debugModeToggle"),
     resultsPanel: document.querySelector(".results-panel"),
     errorBanner: document.getElementById("errorBanner"),
     errorMessage: document.getElementById("errorMessage"),
@@ -43,9 +43,32 @@
   };
 
   const API_KEY_STORAGE = "dyslexaread:geminiApiKey";
+  const OPENROUTER_API_KEY_STORAGE = "dyslexaread:openrouterApiKey";
   const API_BASE_STORAGE = "dyslexaread:apiBaseUrl";
-  const DEBUG_MODE_STORAGE = "dyslexaread:debugMode";
+  const THEME_STORAGE = "dyslexaread:theme";
   const REQUEST_TIMEOUT_MS = 120000;
+
+  function applyTheme(theme) {
+    const root = document.documentElement;
+    const nextTheme = theme === "dark" ? "dark" : "light";
+    root.setAttribute("data-theme", nextTheme);
+    if (el.themeToggleBtn) {
+      const icon = el.themeToggleBtn.querySelector(".theme-icon");
+      if (icon) {
+        icon.textContent = nextTheme === "dark" ? "🌙" : "☀️";
+      }
+      el.themeToggleBtn.setAttribute("title", nextTheme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+      el.themeToggleBtn.setAttribute("aria-label", nextTheme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+      el.themeToggleBtn.classList.toggle("is-dark", nextTheme === "dark");
+    }
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    const next = current === "dark" ? "light" : "dark";
+    localStorage.setItem(THEME_STORAGE, next);
+    applyTheme(next);
+  }
 
   async function canReachBackend(baseUrl) {
     const controller = new AbortController();
@@ -102,32 +125,15 @@
     return /^AIza[\w-]{20,}$/.test(value);
   }
 
+  function isProbablyOpenRouterApiKey(value) {
+    return /^sk-or-v1-[\w-]{20,}$/.test(value);
+  }
+
   function showToast(message) {
     if (!el.toast) return;
     el.toast.textContent = message;
     el.toast.classList.add("show");
     setTimeout(() => el.toast.classList.remove("show"), 2400);
-  }
-
-  function isDebugMode() {
-    return localStorage.getItem(DEBUG_MODE_STORAGE) === "1";
-  }
-
-  function debugLog(label, payload) {
-    if (!isDebugMode()) return;
-    console.log(label, payload);
-  }
-
-  function applyDebugMode(enabled) {
-    if (enabled) {
-      localStorage.setItem(DEBUG_MODE_STORAGE, "1");
-    } else {
-      localStorage.removeItem(DEBUG_MODE_STORAGE);
-    }
-
-    if (el.debugModeToggle) {
-      el.debugModeToggle.checked = enabled;
-    }
   }
 
   function hideResultsOnError() {
@@ -159,6 +165,10 @@
 
   function mapFriendlyError(rawMessage, statusCode) {
     const text = String(rawMessage || "");
+
+    if (/OpenRouter credits|OpenRouter.*quota|insufficient.*credits|Payment Required/i.test(text)) {
+      return "OpenRouter credits are insufficient. Add credits in OpenRouter, or clear OpenRouter key to use Gemini backend key.";
+    }
 
     if (/API_KEY_INVALID|API key not valid|Invalid Gemini API key/i.test(text)) {
       return "Backend configuration error: Invalid API key. Please contact the developer.";
@@ -420,9 +430,7 @@
   function startAutoCaptureLoop() {
     stopAutoCaptureLoop();
     state.autoCaptureTimer = setInterval(() => {
-      captureAndAnalyzeFrame().catch((error) => {
-        debugLog("Auto Capture Error:", { name: error?.name, message: error?.message });
-      });
+      captureAndAnalyzeFrame().catch(() => {});
     }, 5000);
     updateLiveModeButton();
   }
@@ -526,7 +534,6 @@
       updateLiveModeButton();
       showToast("Live camera started. Auto-analyzing every 5s.");
     } catch (error) {
-      debugLog("Camera Error:", { name: error?.name, message: error?.message });
       setStatus(getCameraErrorMessage(error), "error");
       showToast("Unable to start live camera.");
     }
@@ -578,12 +585,19 @@
       formData.append("file", compressed);
 
       const enteredKey = sanitizeApiKey(el.geminiApiKey?.value || "");
-      const hasValidUserKey = enteredKey && isProbablyGeminiApiKey(enteredKey);
+      const savedKey = sanitizeApiKey(localStorage.getItem(API_KEY_STORAGE) || "");
+      const effectiveKey = enteredKey || savedKey;
+      const savedOpenRouterKey = sanitizeApiKey(localStorage.getItem(OPENROUTER_API_KEY_STORAGE) || "");
+      const hasValidUserKey = effectiveKey && isProbablyGeminiApiKey(effectiveKey);
       const headers = {};
       if (hasValidUserKey) {
-        headers["x-gemini-api-key"] = enteredKey;
+        headers["x-gemini-api-key"] = effectiveKey;
       } else if (enteredKey) {
         setStatus("Entered API key format looks invalid. Falling back to backend key (.env) if available.", "error");
+      }
+
+      if (savedOpenRouterKey && isProbablyOpenRouterApiKey(savedOpenRouterKey)) {
+        headers["x-openrouter-api-key"] = savedOpenRouterKey;
       }
 
       const apiBase = await resolveApiBaseUrl();
@@ -600,11 +614,9 @@
       });
 
       clearTimeout(timeoutId);
-      debugLog("API Response:", { status: response.status, ok: response.ok, url: analyzeUrl });
 
       if (!response.ok) {
         const errPayload = await parseErrorResponse(response);
-        debugLog("API Error Payload:", errPayload);
 
         // If user-provided key is invalid, automatically retry once without it
         // so backend .env key can still be used.
@@ -623,15 +635,8 @@
             signal: controller.signal,
           });
 
-          debugLog("API Fallback Response:", {
-            status: fallbackResponse.status,
-            ok: fallbackResponse.ok,
-            url: analyzeUrl,
-          });
-
           if (!fallbackResponse.ok) {
             const fallbackErr = await parseErrorResponse(fallbackResponse);
-            debugLog("API Fallback Error Payload:", fallbackErr);
             throw new Error(mapFriendlyError(fallbackErr.rawMessage, fallbackErr.status));
           }
 
@@ -641,8 +646,6 @@
           } catch (_jsonError) {
             throw new Error("Server error: Invalid JSON response from backend.");
           }
-
-          debugLog("API Fallback Success Body:", fallbackData);
           if (!fallbackData || typeof fallbackData !== "object") {
             throw new Error("Invalid API response format.");
           }
@@ -672,8 +675,6 @@
       } catch (_jsonError) {
         throw new Error("Server error: Invalid JSON response from backend.");
       }
-
-      debugLog("API Success Body:", data);
       if (!data || typeof data !== "object") {
         throw new Error("Invalid API response format.");
       }
@@ -700,11 +701,6 @@
       } else if (error?.message) {
         friendlyMessage = error.message;
       }
-
-      debugLog("Analyze Exception:", {
-        name: error?.name,
-        message: error?.message,
-      });
 
       showErrorBanner(friendlyMessage);
       setStatus(friendlyMessage, "error");
@@ -790,40 +786,40 @@
     if (el.retryAnalyzeBtn) {
       el.retryAnalyzeBtn.addEventListener("click", analyzeImage);
     }
+
     el.saveResultsBtn.addEventListener("click", () => {
       persistResults();
       exportResults();
     });
 
-    if (el.debugModeToggle) {
-      el.debugModeToggle.addEventListener("change", (event) => {
-        applyDebugMode(Boolean(event.target.checked));
-        showToast(event.target.checked ? "Debug mode enabled." : "Debug mode disabled.");
-      });
+    if (el.themeToggleBtn) {
+      el.themeToggleBtn.addEventListener("click", toggleTheme);
     }
 
-    el.saveApiKeyBtn.addEventListener("click", () => {
-      const key = sanitizeApiKey(el.geminiApiKey.value || "");
-      if (!key) {
-        localStorage.removeItem(API_KEY_STORAGE);
-        setApiKeyState(false);
-        setStatus("Saved key cleared. Backend .env key will be used if configured.");
-        showToast("API key cleared.");
-        return;
-      }
+    if (el.saveApiKeyBtn && el.geminiApiKey) {
+      el.saveApiKeyBtn.addEventListener("click", () => {
+        const key = sanitizeApiKey(el.geminiApiKey.value || "");
+        if (!key) {
+          localStorage.removeItem(API_KEY_STORAGE);
+          setApiKeyState(false);
+          setStatus("Saved key cleared. Backend .env key will be used if configured.");
+          showToast("API key cleared.");
+          return;
+        }
 
-      if (!isProbablyGeminiApiKey(key)) {
-        setApiKeyState(false);
-        setStatus("Invalid Gemini API key format. Remove quotes/spaces and try again.", "error");
-        showToast("Invalid key format.");
-        return;
-      }
+        if (!isProbablyGeminiApiKey(key)) {
+          setApiKeyState(false);
+          setStatus("Invalid Gemini API key format. Remove quotes/spaces and try again.", "error");
+          showToast("Invalid key format.");
+          return;
+        }
 
-      localStorage.setItem(API_KEY_STORAGE, key);
-      setApiKeyState(true);
-      setStatus("Gemini API key saved for this browser.", "ok");
-      showToast("API key saved.");
-    });
+        localStorage.setItem(API_KEY_STORAGE, key);
+        setApiKeyState(true);
+        setStatus("Gemini API key saved for this browser.", "ok");
+        showToast("API key saved.");
+      });
+    }
 
     if (el.toggleApiKeyBtn && el.geminiApiKey) {
       el.toggleApiKeyBtn.addEventListener("click", () => {
@@ -842,7 +838,9 @@
 
   setupDnD();
   setupEvents();
-  applyDebugMode(isDebugMode());
+
+  const savedTheme = localStorage.getItem(THEME_STORAGE) || "light";
+  applyTheme(savedTheme);
 
   const storedApiKey = localStorage.getItem(API_KEY_STORAGE);
   if (storedApiKey && el.geminiApiKey) {
