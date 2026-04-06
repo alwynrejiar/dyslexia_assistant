@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DyslexaRead Web Assistant</title>
+  <meta name="description" content="Modern web frontend for dyslexia handwriting analysis with image capture/upload and structured AI results." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">DyslexaRead</p>
+        <h1>Handwriting Assistant</h1>
+      </div>
+      <div class="topbar-actions">
+        <button id="themeToggleBtn" class="btn btn-secondary theme-toggle-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+          <span class="theme-icon" aria-hidden="true">☀️</span>
+        </button>
+        <a href="settings.html" class="btn btn-secondary">Settings</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="panel input-panel" aria-label="Image input section">
+      <h2>Input</h2>
+      <p class="panel-subtext">Capture from camera or upload a file before sending to the analysis API.</p>
+
+      <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Upload image by drag and drop">
+        <input id="fileInput" type="file" accept="image/*" hidden />
+        <p class="drop-title">Drop image here</p>
+        <p class="drop-subtitle">or</p>
+        <button id="uploadBtn" class="btn" type="button">Choose Image</button>
+      </div>
+
+      <div class="camera-actions">
+        <button id="startCameraBtn" class="btn btn-secondary" type="button">Start Camera</button>
+        <button id="captureBtn" class="btn btn-secondary" type="button" disabled>Capture Snapshot</button>
+        <button id="liveModeBtn" class="btn btn-secondary" type="button" disabled>Stop Live Mode</button>
+        <button id="stopCameraBtn" class="btn btn-secondary" type="button" disabled>Stop Camera</button>
+      </div>
+      <p class="panel-subtext">Live mode: when camera is active, the app auto-captures and analyzes a frame every 5 seconds.</p>
+
+      <div class="preview-grid">
+        <div class="media-card">
+          <p>Live Camera</p>
+          <video id="cameraPreview" autoplay playsinline muted></video>
+        </div>
+        <div class="media-card">
+          <p>Selected Image</p>
+          <img id="imagePreview" alt="Selected handwriting preview" />
+          <div id="previewPlaceholder" class="preview-placeholder">No image selected yet</div>
+        </div>
+      </div>
+
+      <canvas id="captureCanvas" hidden></canvas>
+
+      <div class="analyze-row">
+        <button id="analyzeBtn" class="btn btn-primary" type="button">Analyze</button>
+        <div id="loadingIndicator" class="loading-indicator" hidden>
+          <span class="loader-dot" aria-hidden="true"></span>
+          <span>Processing...</span>
+        </div>
+        <div class="progress-wrap" aria-live="polite">
+          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+          <p id="statusText" class="status-text">Ready to analyze.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel results-panel" aria-label="Results section">
+      <h2>Results</h2>
+      <p class="panel-subtext">Review raw transcription, pattern analysis, and corrected text.</p>
+
+      <div id="errorBanner" class="error-banner" role="alert" hidden>
+        <p class="error-title">Warning: Analysis Failed</p>
+        <p id="errorMessage" class="error-message">Something went wrong while processing your request.</p>
+        <button id="retryAnalyzeBtn" class="btn btn-secondary" type="button">Retry</button>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Result tabs">
+        <button class="tab is-active" data-tab="raw" role="tab" aria-selected="true">Raw Text</button>
+        <button class="tab" data-tab="analysis" role="tab" aria-selected="false">Error Analysis</button>
+        <button class="tab" data-tab="corrected" role="tab" aria-selected="false">Corrected Text</button>
+      </div>
+
+      <div class="tab-panels">
+        <article class="tab-panel is-active" data-panel="raw" role="tabpanel">
+          <div id="rawContent" class="content-box">Raw transcription will appear here.</div>
+        </article>
+        <article class="tab-panel" data-panel="analysis" role="tabpanel" hidden>
+          <div id="analysisContent" class="content-box">Error analysis will appear here.</div>
+        </article>
+        <article class="tab-panel" data-panel="corrected" role="tabpanel" hidden>
+          <div id="correctedContent" class="content-box">Corrected text will appear here.</div>
+        </article>
+      </div>
+
+      <div class="results-actions">
+        <button id="saveResultsBtn" class="btn btn-secondary" type="button" disabled>Save Results</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js" defer></script>
+</body>
+</html>

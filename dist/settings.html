@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DyslexaRead Settings</title>
+  <meta name="description" content="Manage DyslexaRead local settings and Gemini API key." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">DyslexaRead</p>
+        <h1>Settings</h1>
+      </div>
+      <div class="topbar-actions">
+        <a href="app.html" class="btn btn-secondary">Back To Main</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="settings-shell">
+    <section class="panel settings-panel" aria-label="Settings panel">
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <button class="settings-tab is-active" data-settings-tab="profile" type="button">Profile</button>
+          <button class="settings-tab" data-settings-tab="api" type="button">API Key</button>
+          <button class="settings-tab" data-settings-tab="delete" type="button">Delete Account</button>
+          <button class="settings-tab" data-settings-tab="saved" type="button">Saved</button>
+        </nav>
+
+        <div class="settings-content">
+          <section class="settings-pane is-active" data-settings-panel="profile">
+            <h2 class="settings-heading">Profile</h2>
+
+            <div class="profile-layout">
+              <article class="profile-preview-card" aria-label="Profile preview card">
+                <div class="profile-preview-avatar-wrap">
+                  <img
+                    id="profileAvatarImg"
+                    src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80"
+                    alt="Ravi Katiyar avatar"
+                    class="profile-preview-avatar"
+                  />
+                </div>
+                <div class="profile-avatar-actions">
+                  <input id="profileAvatarInput" type="file" accept="image/*" hidden />
+                  <button id="changeAvatarBtn" class="btn btn-secondary" type="button">Change Photo</button>
+                </div>
+                <h3 class="profile-preview-name">Alwyn Reji</h3>
+                <p class="profile-preview-role">@alwyn</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-settings-panel="api" hidden>
+            <h2 class="settings-heading">API Key</h2>
+
+            <div class="api-key-row">
+              <div class="api-key-head">
+                <div>
+                  <p class="api-key-kicker">Secure Access</p>
+                  <p class="api-key-title">Gemini API Key</p>
+                </div>
+                <span id="apiKeyState" class="api-key-state">Not Saved</span>
+              </div>
+              <p class="api-key-subtext">Insert your key, save it once, and analyze instantly. Your key stays in this browser.</p>
+              <div class="api-key-controls">
+                <div class="api-key-input-wrap">
+                  <input id="geminiApiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
+                  <button id="toggleApiKeyBtn" class="api-key-toggle" type="button" aria-label="Show or hide API key">Show</button>
+                </div>
+                <button id="saveApiKeyBtn" class="btn btn-primary api-save-btn" type="button">Save Key</button>
+              </div>
+              <p class="api-key-note">Tip: If empty, backend .env key will be used.</p>
+            </div>
+
+            <div class="api-key-row">
+              <div class="api-key-head">
+                <div>
+                  <p class="api-key-kicker">Optional Access</p>
+                  <p class="api-key-title">OpenRouter API Key</p>
+                </div>
+                <span id="openRouterApiKeyState" class="api-key-state">Not Saved</span>
+              </div>
+              <p class="api-key-subtext">Store an OpenRouter key for future model routing support.</p>
+              <div class="api-key-controls">
+                <div class="api-key-input-wrap">
+                  <input id="openRouterApiKey" type="password" placeholder="Paste your OpenRouter API key" autocomplete="off" />
+                  <button id="toggleOpenRouterApiKeyBtn" class="api-key-toggle" type="button" aria-label="Show or hide OpenRouter API key">Show</button>
+                </div>
+                <button id="saveOpenRouterApiKeyBtn" class="btn btn-primary api-save-btn" type="button">Save Key</button>
+              </div>
+              <p class="api-key-note">Format usually starts with sk-or-v1-...</p>
+            </div>
+
+            <p id="settingsStatus" class="status-text">Manage your key and return to the main page to analyze.</p>
+          </section>
+
+          <section class="settings-pane" data-settings-panel="delete" hidden>
+            <h2 class="settings-heading">Delete Account</h2>
+            <p class="panel-subtext">Remove your account data from this browser profile. This action cannot be undone.</p>
+            <button id="clearAllKeysBtn" class="btn btn-secondary" type="button">Delete Account</button>
+          </section>
+
+          <section class="settings-pane" data-settings-panel="saved" hidden>
+            <h2 class="settings-heading">Saved</h2>
+            <div class="saved-grid">
+              <p>Gemini Key</p>
+              <p id="savedGeminiValue" class="saved-value">Not Saved</p>
+              <p>OpenRouter Key</p>
+              <p id="savedOpenRouterValue" class="saved-value">Not Saved</p>
+              <p>Theme</p>
+              <p id="savedThemeValue" class="saved-value">Light</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="settings.js?v=20260406-1" defer></script>
+</body>
+</html>
