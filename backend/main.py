@@ -8,15 +8,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from models.schemas import AnalyzeResponse, HealthResponse
-from services.ai_pipeline import (
+from backend.models.schemas import AnalyzeResponse, HealthResponse
+from backend.services.ai_pipeline import (
     client_ready,
     initialize_client,
     run_pipeline,
     run_pipeline_with_api_key,
     run_pipeline_with_openrouter_api_key,
 )
-from utils.image_utils import normalized_mime, validate_image_bytes, validate_upload_file
+from backend.utils.image_utils import normalized_mime, validate_image_bytes, validate_upload_file
 
 logging.basicConfig(
     level=logging.INFO,

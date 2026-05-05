@@ -46,15 +46,16 @@
         <button id="liveModeBtn" class="btn btn-secondary" type="button" disabled>Stop Live Mode</button>
         <button id="stopCameraBtn" class="btn btn-secondary" type="button" disabled>Stop Camera</button>
       </div>
-      <p class="panel-subtext">Live mode: when camera is active, the app auto-captures and analyzes a frame every 5 seconds.</p>
+      <p class="panel-subtext">Live mode: when camera is active, the app auto-captures and analyzes a frame every 10 seconds.</p>
 
       <div class="preview-grid">
         <div class="media-card">
           <p>Live Camera</p>
           <video id="cameraPreview" autoplay playsinline muted></video>
         </div>
-        <div class="media-card">
+        <div class="media-card selected-image-card">
           <p>Selected Image</p>
+          <button id="clearSelectedImageBtn" class="image-close-btn" type="button" aria-label="Clear selected image">×</button>
           <img id="imagePreview" alt="Selected handwriting preview" />
           <div id="previewPlaceholder" class="preview-placeholder">No image selected yet</div>
         </div>
@@ -106,11 +107,21 @@
       <div class="results-actions">
         <button id="saveResultsBtn" class="btn btn-secondary" type="button" disabled>Save Results</button>
       </div>
+
+    </section>
+
+    <section class="panel recent-history-panel" aria-label="Recent analysis history">
+      <h2>Recent History</h2>
+      <p class="panel-subtext">Last 8 results</p>
+      <div id="recentHistoryGrid" class="recent-history-grid" role="list"></div>
     </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+  <script src="supabase-client.js" defer></script>
   <script src="script.js" defer></script>
 </body>
 </html>

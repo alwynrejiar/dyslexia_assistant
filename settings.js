@@ -2,9 +2,7 @@
   const GEMINI_API_KEY_STORAGE = "dyslexaread:geminiApiKey";
   const OPENROUTER_API_KEY_STORAGE = "dyslexaread:openrouterApiKey";
   const THEME_STORAGE = "dyslexaread:theme";
-  const PROFILE_AVATAR_STORAGE = "dyslexaread:profileAvatar";
-  const DEFAULT_AVATAR_URL = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80";
-  let temporaryAvatarUrl = "";
+  const SAVED_RESULTS_STORAGE = "savedDyslexiaResults";
 
   const el = {
     geminiApiKey: document.getElementById("geminiApiKey"),
@@ -22,20 +20,10 @@
     savedGeminiValue: document.getElementById("savedGeminiValue"),
     savedOpenRouterValue: document.getElementById("savedOpenRouterValue"),
     savedThemeValue: document.getElementById("savedThemeValue"),
-    profileAvatarImg: document.getElementById("profileAvatarImg"),
-    profileAvatarInput: document.getElementById("profileAvatarInput"),
-    changeAvatarBtn: document.getElementById("changeAvatarBtn"),
+    savedResultsList: document.getElementById("savedResultsList"),
+    savedResultsEmpty: document.getElementById("savedResultsEmpty"),
     toast: document.getElementById("toast"),
   };
-
-  function applyProfileAvatar(src) {
-    if (!el.profileAvatarImg) return;
-    if (temporaryAvatarUrl && src !== temporaryAvatarUrl) {
-      URL.revokeObjectURL(temporaryAvatarUrl);
-      temporaryAvatarUrl = "";
-    }
-    el.profileAvatarImg.src = src || DEFAULT_AVATAR_URL;
-  }
 
   function sanitizeApiKey(value) {
     let key = (value || "").trim();
@@ -92,6 +80,52 @@
     }
   }
 
+  function renderSavedResults() {
+    if (!el.savedResultsList || !el.savedResultsEmpty) return;
+
+    const saved = JSON.parse(localStorage.getItem(SAVED_RESULTS_STORAGE) || "[]");
+    el.savedResultsList.innerHTML = "";
+
+    if (!Array.isArray(saved) || saved.length === 0) {
+      el.savedResultsEmpty.style.display = "block";
+      return;
+    }
+
+    el.savedResultsEmpty.style.display = "none";
+    saved.forEach((item, index) => {
+      const card = document.createElement("div");
+      card.className = "saved-result-card";
+
+      const title = document.createElement("div");
+      title.className = "saved-result-title";
+      const createdAt = item?.createdAt ? new Date(item.createdAt) : null;
+      title.textContent = createdAt && !Number.isNaN(createdAt.getTime())
+        ? createdAt.toLocaleString()
+        : `Saved Result ${index + 1}`;
+
+      const preview = document.createElement("div");
+      preview.className = "saved-result-preview";
+      const previewText = (item?.raw || item?.analysis || item?.corrected || "").trim();
+      preview.textContent = previewText ? previewText.slice(0, 140) : "(empty)";
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn btn-secondary saved-result-delete";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.addEventListener("click", () => {
+        const next = saved.filter((_, i) => i !== index);
+        localStorage.setItem(SAVED_RESULTS_STORAGE, JSON.stringify(next));
+        renderSavedResults();
+        showToast("Saved result deleted.");
+      });
+
+      card.appendChild(title);
+      card.appendChild(preview);
+      card.appendChild(deleteBtn);
+      el.savedResultsList.appendChild(card);
+    });
+  }
+
   function setApiKeyState(saved) {
     if (!el.apiKeyState) return;
     el.apiKeyState.textContent = saved ? "Saved" : "Not Saved";
@@ -116,19 +150,6 @@
     document.documentElement.setAttribute("data-theme", savedTheme);
   }
 
-  function loadProfileAvatar() {
-    const savedAvatar = localStorage.getItem(PROFILE_AVATAR_STORAGE) || "";
-    applyProfileAvatar(savedAvatar || DEFAULT_AVATAR_URL);
-
-    // If stored value is broken/unsupported, recover automatically.
-    if (el.profileAvatarImg) {
-      el.profileAvatarImg.onerror = () => {
-        localStorage.removeItem(PROFILE_AVATAR_STORAGE);
-        applyProfileAvatar(DEFAULT_AVATAR_URL);
-        showToast("Saved profile photo was invalid. Reverted to default.");
-      };
-    }
-  }
 
   function loadSavedKeys() {
     const stored = sanitizeApiKey(localStorage.getItem(GEMINI_API_KEY_STORAGE) || "");
@@ -243,11 +264,8 @@
       el.clearAllKeysBtn.addEventListener("click", () => {
         localStorage.removeItem(GEMINI_API_KEY_STORAGE);
         localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
-        localStorage.removeItem(PROFILE_AVATAR_STORAGE);
-
         if (el.geminiApiKey) el.geminiApiKey.value = "";
         if (el.openRouterApiKey) el.openRouterApiKey.value = "";
-        applyProfileAvatar(DEFAULT_AVATAR_URL);
 
         setApiKeyState(false);
         setOpenRouterApiKeyState(false);
@@ -257,47 +275,6 @@
       });
     }
 
-    if (el.changeAvatarBtn && el.profileAvatarInput) {
-      el.changeAvatarBtn.addEventListener("click", () => {
-        el.profileAvatarInput.click();
-      });
-
-      el.profileAvatarInput.addEventListener("change", () => {
-        const file = el.profileAvatarInput?.files?.[0];
-        if (!file) return;
-
-        if (file.type && !file.type.startsWith("image/")) {
-          showToast("Please select an image file.");
-          el.profileAvatarInput.value = "";
-          return;
-        }
-
-        const previewUrl = URL.createObjectURL(file);
-
-        // Always preview the chosen file immediately.
-        temporaryAvatarUrl = previewUrl;
-        applyProfileAvatar(previewUrl);
-
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = typeof reader.result === "string" ? reader.result : "";
-          if (!result) {
-            showToast("Could not read this image file.");
-            el.profileAvatarInput.value = "";
-            return;
-          }
-          try {
-            localStorage.setItem(PROFILE_AVATAR_STORAGE, result);
-            applyProfileAvatar(result);
-            showToast("Profile photo updated.");
-          } catch (_storageError) {
-            showToast("Photo updated for this session only.");
-          }
-          el.profileAvatarInput.value = "";
-        };
-        reader.readAsDataURL(file);
-      });
-    }
 
     el.settingsTabs.forEach((tab) => {
       tab.addEventListener("click", () => {
@@ -307,7 +284,7 @@
   }
 
   applyTheme();
-  loadProfileAvatar();
   loadSavedKeys();
+  renderSavedResults();
   setupEvents();
 })();

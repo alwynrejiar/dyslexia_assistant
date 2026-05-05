@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DyslexaRead Auth</title>
+  <meta name="description" content="Sign in or sign up to DyslexaRead." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">DyslexaRead</p>
+        <h1>Sign In</h1>
+      </div>
+    </div>
+  </header>
+
+  <main class="settings-shell">
+    <section class="panel settings-panel" aria-label="Auth panel">
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="Auth sections">
+          <button class="settings-tab is-active" data-auth-tab="signin" type="button">Sign In</button>
+          <button class="settings-tab" data-auth-tab="signup" type="button">Sign Up</button>
+        </nav>
+
+        <div class="settings-content">
+          <section class="settings-pane is-active" data-auth-panel="signin">
+            <h2 class="settings-heading">Welcome Back</h2>
+            <p class="panel-subtext">Sign in to access your saved profile and reports.</p>
+            <div class="api-key-row">
+              <label for="signinEmail">Email</label>
+              <input id="signinEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+            </div>
+            <div class="api-key-row">
+              <label for="signinPassword">Password</label>
+              <input id="signinPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+            </div>
+            <button id="signinBtn" class="btn btn-primary" type="button">Sign In</button>
+          </section>
+
+          <section class="settings-pane" data-auth-panel="signup" hidden>
+            <h2 class="settings-heading">Create Account</h2>
+            <p class="panel-subtext">Create your account to save profiles and reports.</p>
+            <div class="api-key-row">
+              <label for="signupName">Name</label>
+              <input id="signupName" type="text" placeholder="Full name" autocomplete="name" />
+            </div>
+            <div class="api-key-row">
+              <label for="signupAge">Age</label>
+              <input id="signupAge" type="number" min="1" max="120" placeholder="Age" />
+            </div>
+            <div class="api-key-row">
+              <label for="signupRole">Role</label>
+              <select id="signupRole">
+                <option value="parent">Parent</option>
+                <option value="teacher">Teacher</option>
+                <option value="therapist">Therapist</option>
+                <option value="student">Student</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="api-key-row" id="signupCustomRoleRow" hidden>
+              <label for="signupRoleCustom">Custom role</label>
+              <input id="signupRoleCustom" type="text" placeholder="Enter your role" />
+            </div>
+            <div class="api-key-row">
+              <label for="signupLanguages">Languages</label>
+              <input id="signupLanguages" type="text" placeholder="English, Spanish" />
+            </div>
+            <div class="api-key-row">
+              <label for="signupEmail">Email</label>
+              <input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+            </div>
+            <div class="api-key-row">
+              <label for="signupPassword">Password</label>
+              <input id="signupPassword" type="password" placeholder="At least 8 characters" autocomplete="new-password" />
+            </div>
+            <button id="signupBtn" class="btn btn-primary" type="button">Create Account</button>
+          </section>
+
+          <p id="authStatus" class="status-text"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" defer></script>
+  <script src="supabase-client.js" defer></script>
+  <script src="auth.js" defer></script>
+</body>
+</html>

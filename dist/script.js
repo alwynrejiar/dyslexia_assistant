@@ -1,10 +1,15 @@
 (() => {
+  const supabaseClient = window.supabaseClient;
   const state = {
     selectedFile: null,
     stream: null,
     autoCaptureTimer: null,
     progressTimer: null,
     resultData: null,
+    selectedImageDataUrl: "",
+    selectedImageWidth: 0,
+    selectedImageHeight: 0,
+    activeRequestAbort: null,
     isAnalyzing: false,
   };
 
@@ -23,6 +28,7 @@
     cameraPreview: document.getElementById("cameraPreview"),
     imagePreview: document.getElementById("imagePreview"),
     previewPlaceholder: document.getElementById("previewPlaceholder"),
+    clearSelectedImageBtn: document.getElementById("clearSelectedImageBtn"),
     captureCanvas: document.getElementById("captureCanvas"),
     analyzeBtn: document.getElementById("analyzeBtn"),
     loadingIndicator: document.getElementById("loadingIndicator"),
@@ -47,6 +53,7 @@
   const API_BASE_STORAGE = "dyslexaread:apiBaseUrl";
   const THEME_STORAGE = "dyslexaread:theme";
   const REQUEST_TIMEOUT_MS = 120000;
+  const MAX_SAVED_REPORTS = 25;
 
   function applyTheme(theme) {
     const root = document.documentElement;
@@ -60,6 +67,14 @@
       el.themeToggleBtn.setAttribute("title", nextTheme === "dark" ? "Switch to light mode" : "Switch to dark mode");
       el.themeToggleBtn.setAttribute("aria-label", nextTheme === "dark" ? "Switch to light mode" : "Switch to dark mode");
       el.themeToggleBtn.classList.toggle("is-dark", nextTheme === "dark");
+    }
+  }
+
+  async function ensureAuthenticated() {
+    if (!supabaseClient) return;
+    const { data } = await supabaseClient.auth.getSession();
+    if (!data?.session) {
+      window.location.href = "auth.html";
     }
   }
 
@@ -79,7 +94,9 @@
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
-      return response.ok;
+      if (!response.ok) return false;
+      const data = await response.json().catch(() => null);
+      return Boolean(data && data.status === "ok");
     } catch (_error) {
       clearTimeout(timeoutId);
       return false;
@@ -275,7 +292,10 @@
     if (el.captureBtn) el.captureBtn.disabled = isAnalyzing || !state.stream;
     if (el.liveModeBtn) el.liveModeBtn.disabled = !state.stream;
     if (el.stopCameraBtn) el.stopCameraBtn.disabled = isAnalyzing || !state.stream;
-    if (el.loadingIndicator) el.loadingIndicator.hidden = !isAnalyzing;
+    if (el.loadingIndicator) {
+      el.loadingIndicator.hidden = !isAnalyzing;
+      el.loadingIndicator.style.display = isAnalyzing ? "inline-flex" : "none";
+    }
   }
 
   function updateLiveModeButton() {
@@ -347,19 +367,48 @@
 
   function setSelectedFile(file) {
     state.selectedFile = file;
+    state.selectedImageDataUrl = "";
+    state.selectedImageWidth = 0;
+    state.selectedImageHeight = 0;
     setAnalyzing(false);
 
     if (!file) {
       el.imagePreview.style.display = "none";
+      el.imagePreview.src = "";
       el.previewPlaceholder.style.display = "grid";
+      if (el.clearSelectedImageBtn) {
+        el.clearSelectedImageBtn.disabled = true;
+      }
+      el.rawContent.textContent = "No image selected.";
+      el.analysisContent.textContent = "No image selected.";
+      el.correctedContent.textContent = "No image selected.";
+      el.saveResultsBtn.disabled = true;
+      state.resultData = null;
+      setStatus("Ready to analyze.");
       return;
     }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        state.selectedImageDataUrl = reader.result;
+      }
+    };
+    reader.readAsDataURL(file);
 
     const url = URL.createObjectURL(file);
     el.imagePreview.src = url;
     el.imagePreview.style.display = "block";
     el.previewPlaceholder.style.display = "none";
+    if (el.clearSelectedImageBtn) {
+      el.clearSelectedImageBtn.disabled = false;
+    }
     setStatus(`Image ready: ${file.name}`);
+
+    el.imagePreview.onload = () => {
+      state.selectedImageWidth = el.imagePreview.naturalWidth || 0;
+      state.selectedImageHeight = el.imagePreview.naturalHeight || 0;
+    };
   }
 
   async function compressImageFile(file, maxDim = 1280, quality = 0.82) {
@@ -403,13 +452,19 @@
       clearInterval(state.autoCaptureTimer);
       state.autoCaptureTimer = null;
     }
+    if (state.activeRequestAbort) {
+      state.activeRequestAbort.abort();
+      state.activeRequestAbort = null;
+    }
+    setAnalyzing(false);
+    stopFakeProgress(false);
     updateLiveModeButton();
   }
 
   async function captureAndAnalyzeFrame() {
     if (!state.stream || state.isAnalyzing) return;
     const video = el.cameraPreview;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
 
     const canvas = el.captureCanvas;
     const context = canvas.getContext("2d");
@@ -431,8 +486,26 @@
     stopAutoCaptureLoop();
     state.autoCaptureTimer = setInterval(() => {
       captureAndAnalyzeFrame().catch(() => {});
-    }, 5000);
+    }, 10000);
     updateLiveModeButton();
+  }
+
+  async function waitForVideoReady(video, timeoutMs = 4000) {
+    const start = Date.now();
+    return new Promise((resolve) => {
+      function check() {
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start >= timeoutMs) {
+          resolve(false);
+          return;
+        }
+        requestAnimationFrame(check);
+      }
+      check();
+    });
   }
 
   function getCameraErrorMessage(error) {
@@ -498,26 +571,39 @@
     try {
       let stream = null;
       let lastError = null;
+      let ready = false;
       for (const constraints of constraintCandidates) {
         try {
           stream = await navigator.mediaDevices.getUserMedia(constraints);
-          break;
+          state.stream = stream;
+          el.cameraPreview.srcObject = state.stream;
+          el.cameraPreview.style.display = "block";
+          el.cameraPreview.muted = true;
+          el.cameraPreview.playsInline = true;
+          try {
+            await el.cameraPreview.play();
+          } catch (_playError) {
+            // Some browsers auto-play after metadata; ignore explicit play failure here.
+          }
+
+          ready = await waitForVideoReady(el.cameraPreview, 5000);
+          if (ready) {
+            break;
+          }
+
+          stream.getTracks().forEach((track) => track.stop());
+          state.stream = null;
+          el.cameraPreview.srcObject = null;
         } catch (error) {
           lastError = error;
         }
       }
 
-      if (!stream) {
+      if (!stream || !ready) {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
         throw lastError || new Error("Could not start camera stream");
-      }
-
-      state.stream = stream;
-      el.cameraPreview.srcObject = state.stream;
-      el.cameraPreview.style.display = "block";
-      try {
-        await el.cameraPreview.play();
-      } catch (_playError) {
-        // Some browsers auto-play after metadata; ignore explicit play failure here.
       }
 
       state.stream.getVideoTracks().forEach((track) => {
@@ -532,7 +618,7 @@
       setStatus("Camera is active.", "ok");
       startAutoCaptureLoop();
       updateLiveModeButton();
-      showToast("Live camera started. Auto-analyzing every 5s.");
+      showToast("Live camera started. Auto-analyzing every 10s.");
     } catch (error) {
       setStatus(getCameraErrorMessage(error), "error");
       showToast("Unable to start live camera.");
@@ -572,7 +658,13 @@
     const fileToAnalyze = options.fileOverride || state.selectedFile;
     const silent = options.silent === true;
     const source = options.source || "manual";
-    if (!fileToAnalyze || state.isAnalyzing) return;
+    if (!fileToAnalyze || state.isAnalyzing) {
+      if (!fileToAnalyze) {
+        setAnalyzing(false);
+        stopFakeProgress(false);
+      }
+      return;
+    }
 
     setAnalyzing(true);
     startFakeProgress();
@@ -604,6 +696,7 @@
       const analyzeUrl = `${apiBase}/analyze`;
 
       const controller = new AbortController();
+      state.activeRequestAbort = controller;
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       const response = await fetch(analyzeUrl, {
@@ -614,6 +707,7 @@
       });
 
       clearTimeout(timeoutId);
+      state.activeRequestAbort = null;
 
       if (!response.ok) {
         const errPayload = await parseErrorResponse(response);
@@ -706,19 +800,315 @@
       setStatus(friendlyMessage, "error");
       if (!silent) showToast("Analysis failed. See error details.");
     } finally {
+      state.activeRequestAbort = null;
       setAnalyzing(false);
     }
   }
 
-  function exportResults() {
+  async function exportResults() {
     if (!state.resultData) return;
-    const blob = new Blob([JSON.stringify(state.resultData, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `dyslexaread-results-${Date.now()}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    const corrected = state.resultData.corrected || "";
+    const originalInfo = await getOriginalImageInfo();
+    const originalImage = originalInfo.dataUrl;
+    const correctedImage = buildCorrectedImageDataUrl(
+      corrected,
+      originalInfo.width,
+      originalInfo.height,
+    );
+    const jsPDF = window.jspdf?.jsPDF;
+    if (!jsPDF) {
+      showToast("PDF export unavailable. Please refresh and try again.");
+      return;
+    }
+
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    const gap = 20;
+    const columnWidth = (pageWidth - margin * 2 - gap) / 2;
+    const imageBoxHeight = 260;
+    const startY = 70;
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(16);
+    doc.text("DyslexaRead Corrected Text", margin, 40);
+
+    const originalDims = getImageDimensions(originalInfo.width, originalInfo.height);
+    const correctedDims = getImageDimensions(originalInfo.width, originalInfo.height);
+
+    const leftBox = { x: margin, y: startY, w: columnWidth, h: imageBoxHeight };
+    const rightBox = { x: margin + columnWidth + gap, y: startY, w: columnWidth, h: imageBoxHeight };
+
+    doc.setFontSize(12);
+    doc.text("Original Image", leftBox.x, leftBox.y - 10);
+    doc.text("Corrected Image", rightBox.x, rightBox.y - 10);
+
+    drawImageOrPlaceholder(doc, originalImage, leftBox, originalDims);
+    drawImageOrPlaceholder(doc, correctedImage, rightBox, correctedDims);
+
+    const textStartY = startY + imageBoxHeight + 30;
+    const maxTextWidth = pageWidth - margin * 2;
+    doc.setFontSize(12);
+    const lines = doc.splitTextToSize(corrected || "", maxTextWidth);
+    doc.text(lines, margin, textStartY, { maxWidth: maxTextWidth });
+
+    const pdfBlob = doc.output("blob");
+    doc.save(`dyslexaread-corrected-${Date.now()}.pdf`);
+    if (supabaseClient) {
+      saveReportToSupabase(pdfBlob, originalImage).catch(() => {
+        showToast("Saved locally. Supabase upload failed.");
+      });
+    }
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const parts = dataUrl.split(",");
+    if (parts.length < 2) return null;
+    const match = parts[0].match(/data:(.*);base64/);
+    if (!match) return null;
+    const mime = match[1];
+    const binary = atob(parts[1]);
+    const array = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      array[i] = binary.charCodeAt(i);
+    }
+    return new Blob([array], { type: mime });
+  }
+
+  async function saveReportToSupabase(pdfBlob, originalImageDataUrl) {
+    const { data } = await supabaseClient.auth.getSession();
+    const session = data?.session;
+    if (!session) {
+      showToast("Sign in to save reports to profile.");
+      return;
+    }
+
+    const userId = session.user.id;
+    const { count } = await supabaseClient
+      .from("saved_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+    if (count !== null && count >= MAX_SAVED_REPORTS) {
+      showToast("Profile already has 25 saved reports.");
+      return;
+    }
+
+    const timestamp = Date.now();
+    const pdfPath = `${userId}/${timestamp}.pdf`;
+    const pdfUpload = await supabaseClient
+      .storage
+      .from("reports")
+      .upload(pdfPath, pdfBlob, { contentType: "application/pdf" });
+    if (pdfUpload.error) throw pdfUpload.error;
+
+    let originalUrl = null;
+    if (originalImageDataUrl) {
+      const blob = dataUrlToBlob(originalImageDataUrl);
+      if (blob) {
+        const ext = blob.type.split("/")[1] || "png";
+        const imagePath = `${userId}/${timestamp}.${ext}`;
+        const imgUpload = await supabaseClient
+          .storage
+          .from("originals")
+          .upload(imagePath, blob, { contentType: blob.type });
+        if (!imgUpload.error) {
+          originalUrl = supabaseClient.storage.from("originals").getPublicUrl(imagePath).data.publicUrl;
+        }
+      }
+    }
+
+    const pdfUrl = supabaseClient.storage.from("reports").getPublicUrl(pdfPath).data.publicUrl;
+    await supabaseClient.from("saved_reports").insert({
+      user_id: userId,
+      pdf_url: pdfUrl,
+      original_image_url: originalUrl,
+    });
+    showToast("Saved to profile.");
+  }
+
+  function getImageDimensions(width, height) {
+    const w = Number(width) || 0;
+    const h = Number(height) || 0;
+    if (w > 0 && h > 0) return { width: w, height: h };
+    return { width: 4, height: 3 };
+  }
+
+  function fitToBox(srcWidth, srcHeight, boxWidth, boxHeight) {
+    const ratio = Math.min(boxWidth / srcWidth, boxHeight / srcHeight);
+    return {
+      width: srcWidth * ratio,
+      height: srcHeight * ratio,
+    };
+  }
+
+  function drawImageOrPlaceholder(doc, dataUrl, box, dims) {
+    if (!dataUrl) {
+      doc.setDrawColor(180);
+      doc.rect(box.x, box.y, box.w, box.h);
+      doc.setTextColor(120);
+      doc.setFontSize(10);
+      doc.text("Image unavailable", box.x + 10, box.y + 20);
+      doc.setTextColor(0);
+      return;
+    }
+
+    const fit = fitToBox(dims.width, dims.height, box.w, box.h);
+    const x = box.x + (box.w - fit.width) / 2;
+    const y = box.y + (box.h - fit.height) / 2;
+    doc.addImage(dataUrl, "PNG", x, y, fit.width, fit.height);
+    doc.setDrawColor(220);
+    doc.rect(box.x, box.y, box.w, box.h);
+  }
+
+  function buildNotepadReportHtml({ corrected, originalImage, correctedImage }) {
+    const originalBlock = originalImage
+      ? `<img src="${originalImage}" alt="Original handwriting" />`
+      : `<div class="placeholder">Original image unavailable.</div>`;
+    const correctedBlock = correctedImage
+      ? `<img src="${correctedImage}" alt="Corrected text" />`
+      : `<div class="placeholder">Corrected image unavailable.</div>`;
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DyslexaRead Corrected Report</title>
+  <style>
+    body { font-family: "Courier New", monospace; color: #111; background: #fff; margin: 24px; }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+    .panel { border: 1px solid #ddd; padding: 12px; }
+    .panel h2 { font-size: 14px; margin: 0 0 8px; }
+    img { max-width: 360px; height: auto; display: block; }
+    pre { white-space: pre-wrap; line-height: 1.4; margin-top: 16px; }
+    .placeholder { width: 360px; min-height: 120px; display: grid; place-items: center; color: #666; border: 1px dashed #aaa; }
+  </style>
+</head>
+<body>
+  <h1>DyslexaRead Corrected Text</h1>
+  <div class="row">
+    <div class="panel">
+      <h2>Original Image</h2>
+      ${originalBlock}
+    </div>
+    <div class="panel">
+      <h2>Corrected Image</h2>
+      ${correctedBlock}
+    </div>
+  </div>
+  <pre>${escapeHtml(corrected || "")}</pre>
+</body>
+</html>`;
+  }
+
+  function buildCorrectedImageDataUrl(text, width, height) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    const padding = Math.max(20, Math.round((Math.min(width, height) || 360) * 0.06));
+    const targetWidth = Math.max(360, Number(width) || 0) || 720;
+    const targetHeight = Math.max(240, Number(height) || 0) || 360;
+    const maxWidth = Math.max(180, targetWidth - padding * 2);
+
+    let fontSize = Math.max(18, Math.min(48, Math.round(targetHeight * 0.06)));
+    let lineHeight = 22;
+    let lines = [];
+    let attempts = 0;
+    while (attempts < 12) {
+      ctx.font = `${fontSize}px Courier New`;
+      lines = wrapTextLines(ctx, text, maxWidth);
+      lineHeight = Math.round(fontSize * 1.35);
+      if (lines.length * lineHeight <= targetHeight - padding * 2) {
+        break;
+      }
+      fontSize -= 1;
+      attempts += 1;
+    }
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#111111";
+    ctx.font = `${fontSize}px Courier New`;
+
+    const maxLines = Math.floor((targetHeight - padding * 2) / lineHeight) || lines.length;
+    lines.slice(0, maxLines).forEach((line, index) => {
+      ctx.fillText(line, padding, padding + (index + 1) * lineHeight - 4);
+    });
+
+    return canvas.toDataURL("image/png");
+  }
+
+  function wrapTextLines(ctx, text, maxWidth) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let current = "";
+
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (ctx.measureText(next).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    });
+
+    if (current) lines.push(current);
+    if (lines.length === 0) lines.push("");
+    return lines;
+  }
+
+  async function getOriginalImageInfo() {
+    if (state.selectedImageDataUrl) {
+      return {
+        dataUrl: state.selectedImageDataUrl,
+        width: state.selectedImageWidth,
+        height: state.selectedImageHeight,
+      };
+    }
+
+    if (el.imagePreview && el.imagePreview.src) {
+      const img = await loadImage(el.imagePreview.src);
+      if (img) {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width || 0;
+        canvas.height = img.naturalHeight || img.height || 0;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          return {
+            dataUrl: canvas.toDataURL("image/png"),
+            width: canvas.width,
+            height: canvas.height,
+          };
+        }
+      }
+    }
+
+    return { dataUrl: "", width: 0, height: 0 };
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function setupDnD() {
@@ -785,6 +1175,12 @@
     el.analyzeBtn.addEventListener("click", analyzeImage);
     if (el.retryAnalyzeBtn) {
       el.retryAnalyzeBtn.addEventListener("click", analyzeImage);
+    }
+
+    if (el.clearSelectedImageBtn) {
+      el.clearSelectedImageBtn.addEventListener("click", () => {
+        setSelectedFile(null);
+      });
     }
 
     el.saveResultsBtn.addEventListener("click", () => {
@@ -857,6 +1253,12 @@
   }
 
   loadPersistedResults();
+  ensureAuthenticated();
+  if (el.loadingIndicator) {
+    el.loadingIndicator.hidden = true;
+    el.loadingIndicator.style.display = "none";
+  }
+  stopFakeProgress(false);
   setAnalyzing(false);
   updateLiveModeButton();
 })();

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DyslexaRead Profile</title>
+  <meta name="description" content="Complete your DyslexaRead profile." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">DyslexaRead</p>
+        <h1>Profile</h1>
+      </div>
+      <div class="topbar-actions">
+        <a href="app.html" class="btn btn-secondary">Back to App</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="settings-shell">
+    <section class="panel settings-panel" aria-label="Profile setup">
+      <div class="settings-content">
+        <h2 class="settings-heading">Your Profile</h2>
+
+        <div class="profile-avatar-block">
+          <div class="profile-avatar-wrap">
+            <img id="profileAvatarImg" alt="Profile avatar" class="profile-avatar" />
+            <span id="profileAvatarFallback" class="profile-avatar-fallback">U</span>
+          </div>
+          <div>
+            <button id="profileAvatarBtn" class="btn btn-secondary" type="button">Upload Photo</button>
+            <input id="profileAvatarInput" type="file" accept="image/png,image/jpeg" hidden />
+          </div>
+        </div>
+
+        <div class="api-key-row">
+          <label for="profileName">Name *</label>
+          <input id="profileName" type="text" placeholder="Full name" />
+        </div>
+        <div class="api-key-row">
+          <label for="profileAge">Age *</label>
+          <input id="profileAge" type="number" min="1" max="120" placeholder="Age" />
+        </div>
+        <div class="api-key-row">
+          <label for="profileRole">Role *</label>
+          <select id="profileRole">
+            <option value="parent">Parent</option>
+            <option value="teacher">Teacher</option>
+            <option value="therapist">Therapist</option>
+            <option value="student">Student</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="api-key-row" id="customRoleRow" hidden>
+          <label for="profileRoleCustom">Custom role *</label>
+          <input id="profileRoleCustom" type="text" placeholder="Enter your role" />
+        </div>
+        <div class="api-key-row">
+          <label for="profileLanguages">Languages *</label>
+          <input id="profileLanguages" type="text" placeholder="English, Spanish" />
+        </div>
+        <div class="api-key-row">
+          <label for="profileEmail">Email *</label>
+          <input id="profileEmail" type="email" placeholder="you@example.com" />
+        </div>
+        <div class="api-key-row">
+          <label for="profileUsername">Username *</label>
+          <input id="profileUsername" type="text" placeholder="username" />
+        </div>
+
+        <div class="results-actions">
+          <button id="saveProfileBtn" class="btn btn-primary" type="button">Save Profile</button>
+        </div>
+
+        <p id="profileStatus" class="status-text"></p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" defer></script>
+  <script src="supabase-client.js" defer></script>
+  <script src="profile.js" defer></script>
+</body>
+</html>

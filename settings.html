@@ -39,24 +39,57 @@
           <section class="settings-pane is-active" data-settings-panel="profile">
             <h2 class="settings-heading">Profile</h2>
 
-            <div class="profile-layout">
-              <article class="profile-preview-card" aria-label="Profile preview card">
-                <div class="profile-preview-avatar-wrap">
-                  <img
-                    id="profileAvatarImg"
-                    src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=240&q=80"
-                    alt="Ravi Katiyar avatar"
-                    class="profile-preview-avatar"
-                  />
-                </div>
-                <div class="profile-avatar-actions">
-                  <input id="profileAvatarInput" type="file" accept="image/*" hidden />
-                  <button id="changeAvatarBtn" class="btn btn-secondary" type="button">Change Photo</button>
-                </div>
-                <h3 class="profile-preview-name">Alwyn Reji</h3>
-                <p class="profile-preview-role">@alwyn</p>
-              </article>
+            <div class="profile-avatar-block">
+              <div class="profile-avatar-wrap">
+                <img id="profileAvatarImg" alt="Profile avatar" class="profile-avatar" />
+                <span id="profileAvatarFallback" class="profile-avatar-fallback">U</span>
+              </div>
+              <div>
+                <button id="profileAvatarBtn" class="btn btn-secondary" type="button">Upload Photo</button>
+                <input id="profileAvatarInput" type="file" accept="image/png,image/jpeg" hidden />
+              </div>
             </div>
+
+            <div class="api-key-row">
+              <label for="profileName">Name *</label>
+              <input id="profileName" type="text" placeholder="Full name" />
+            </div>
+            <div class="api-key-row">
+              <label for="profileAge">Age *</label>
+              <input id="profileAge" type="number" min="1" max="120" placeholder="Age" />
+            </div>
+            <div class="api-key-row">
+              <label for="profileRole">Role *</label>
+              <select id="profileRole">
+                <option value="parent">Parent</option>
+                <option value="teacher">Teacher</option>
+                <option value="therapist">Therapist</option>
+                <option value="student">Student</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div class="api-key-row" id="customRoleRow" hidden>
+              <label for="profileRoleCustom">Custom role *</label>
+              <input id="profileRoleCustom" type="text" placeholder="Enter your role" />
+            </div>
+            <div class="api-key-row">
+              <label for="profileLanguages">Languages *</label>
+              <input id="profileLanguages" type="text" placeholder="English, Spanish" />
+            </div>
+            <div class="api-key-row">
+              <label for="profileEmail">Email *</label>
+              <input id="profileEmail" type="email" placeholder="you@example.com" />
+            </div>
+            <div class="api-key-row">
+              <label for="profileUsername">Username *</label>
+              <input id="profileUsername" type="text" placeholder="username" />
+            </div>
+
+            <div class="results-actions">
+              <button id="saveProfileBtn" class="btn btn-primary" type="button">Save Profile</button>
+            </div>
+
+            <p id="profileStatus" class="status-text"></p>
           </section>
 
           <section class="settings-pane" data-settings-panel="api" hidden>
@@ -119,6 +152,11 @@
               <p>Theme</p>
               <p id="savedThemeValue" class="saved-value">Light</p>
             </div>
+            <div class="saved-results">
+              <h3 class="settings-subheading">Saved Results</h3>
+              <p id="savedResultsEmpty" class="panel-subtext">No saved results yet.</p>
+              <div id="savedResultsList" class="saved-results-list"></div>
+            </div>
           </section>
         </div>
       </div>
@@ -127,6 +165,9 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="settings.js?v=20260406-1" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" defer></script>
+  <script src="supabase-client.js" defer></script>
+  <script src="settings.js?v=20260505-1" defer></script>
+  <script src="profile.js?v=20260505-1" defer></script>
 </body>
 </html>
