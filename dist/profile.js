@@ -272,6 +272,8 @@
       const session = sessionData?.session;
       if (!session) return;
 
+      const previousAvatarPath = avatarPath;
+
       const ext = file.name.split(".").pop() || "png";
       const path = `${session.user.id}/${Date.now()}.${ext}`;
       const { error } = await client.storage
@@ -285,6 +287,15 @@
       avatarPath = path;
       avatarUrl = await resolveAvatarUrl(path);
       await persistAvatar(session.user.id);
+
+      if (previousAvatarPath && previousAvatarPath !== avatarPath) {
+        const { error: removeError } = await client.storage
+          .from("avatars")
+          .remove([previousAvatarPath]);
+        if (removeError) {
+          setStatus(removeError.message || "Unable to remove previous avatar.", "error");
+        }
+      }
       applyAvatar(avatarUrl, el.name.value || el.email.value);
       el.avatarInput.value = "";
       showToast("Profile photo updated.");

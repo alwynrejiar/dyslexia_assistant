@@ -13,7 +13,6 @@ from backend.services.ai_pipeline import (
     client_ready,
     initialize_client,
     run_pipeline,
-    run_pipeline_with_api_key,
     run_pipeline_with_openrouter_api_key,
 )
 from backend.utils.image_utils import normalized_mime, validate_image_bytes, validate_upload_file
@@ -59,7 +58,6 @@ async def health() -> HealthResponse:
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(
     file: UploadFile = File(...),
-    x_gemini_api_key: str | None = Header(default=None),
     x_openrouter_api_key: str | None = Header(default=None),
 ) -> AnalyzeResponse:
     validate_upload_file(file)
@@ -74,9 +72,6 @@ async def analyze(
         if x_openrouter_api_key:
             pipeline_fn = run_pipeline_with_openrouter_api_key
             pipeline_args = (image_bytes, media_type, x_openrouter_api_key)
-        elif x_gemini_api_key:
-            pipeline_fn = run_pipeline_with_api_key
-            pipeline_args = (image_bytes, media_type, x_gemini_api_key)
         else:
             pipeline_fn = run_pipeline
             pipeline_args = (image_bytes, media_type)
@@ -92,7 +87,7 @@ async def analyze(
         if "OpenRouter credits/quota issue (402)" in str(exc):
             raise HTTPException(
                 status_code=402,
-                detail="OpenRouter credits are insufficient for this request. Add credits or use Gemini key/backend .env key.",
+                detail="OpenRouter credits are insufficient for this request. Add credits and try again.",
             )
         logger.exception("Client configuration error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -103,11 +98,6 @@ async def analyze(
             raise HTTPException(
                 status_code=401,
                 detail="Invalid OpenRouter API key. Remove extra quotes/spaces and try again.",
-            )
-        if "API_KEY_INVALID" in str(exc) or "API key not valid" in str(exc):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid Gemini API key. Remove extra quotes/spaces and try again, or clear the key to use backend .env.",
             )
         logger.exception("Analysis failed")
         raise HTTPException(status_code=502, detail=f"AI processing failed: {exc}")

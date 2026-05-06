@@ -1,14 +1,10 @@
 (() => {
-  const GEMINI_API_KEY_STORAGE = "dyslexaread:geminiApiKey";
   const OPENROUTER_API_KEY_STORAGE = "dyslexaread:openrouterApiKey";
   const THEME_STORAGE = "dyslexaread:theme";
-  const SAVED_RESULTS_STORAGE = "savedDyslexiaResults";
+
+  localStorage.removeItem("dyslexaread:geminiApiKey");
 
   const el = {
-    geminiApiKey: document.getElementById("geminiApiKey"),
-    saveApiKeyBtn: document.getElementById("saveApiKeyBtn"),
-    toggleApiKeyBtn: document.getElementById("toggleApiKeyBtn"),
-    apiKeyState: document.getElementById("apiKeyState"),
     openRouterApiKey: document.getElementById("openRouterApiKey"),
     saveOpenRouterApiKeyBtn: document.getElementById("saveOpenRouterApiKeyBtn"),
     toggleOpenRouterApiKeyBtn: document.getElementById("toggleOpenRouterApiKeyBtn"),
@@ -17,12 +13,13 @@
     settingsTabs: Array.from(document.querySelectorAll(".settings-tab")),
     settingsPanes: Array.from(document.querySelectorAll(".settings-pane")),
     clearAllKeysBtn: document.getElementById("clearAllKeysBtn"),
-    savedGeminiValue: document.getElementById("savedGeminiValue"),
-    savedOpenRouterValue: document.getElementById("savedOpenRouterValue"),
-    savedThemeValue: document.getElementById("savedThemeValue"),
     savedResultsList: document.getElementById("savedResultsList"),
     savedResultsEmpty: document.getElementById("savedResultsEmpty"),
+    deleteInstruction: document.getElementById("deleteInstruction"),
     toast: document.getElementById("toast"),
+    pdfPreviewModal: document.getElementById("pdfPreviewModal"),
+    pdfPreviewFrame: document.getElementById("pdfPreviewFrame"),
+    pdfPreviewClose: document.getElementById("pdfPreviewClose"),
   };
 
   function sanitizeApiKey(value) {
@@ -36,10 +33,6 @@
     }
 
     return key;
-  }
-
-  function isProbablyGeminiApiKey(value) {
-    return /^AIza[\w-]{20,}$/.test(value);
   }
 
   function isProbablyOpenRouterApiKey(value) {
@@ -64,72 +57,141 @@
     });
   }
 
-  function renderSavedSummary() {
-    if (el.savedGeminiValue) {
-      const gemini = sanitizeApiKey(localStorage.getItem(GEMINI_API_KEY_STORAGE) || "");
-      el.savedGeminiValue.textContent = gemini ? "Saved" : "Not Saved";
-    }
-
-    if (el.savedOpenRouterValue) {
-      const openRouter = sanitizeApiKey(localStorage.getItem(OPENROUTER_API_KEY_STORAGE) || "");
-      el.savedOpenRouterValue.textContent = openRouter ? "Saved" : "Not Saved";
-    }
-
-    if (el.savedThemeValue) {
-      el.savedThemeValue.textContent = localStorage.getItem(THEME_STORAGE) === "dark" ? "Dark" : "Light";
-    }
-  }
-
-  function renderSavedResults() {
+  async function loadSavedResults() {
     if (!el.savedResultsList || !el.savedResultsEmpty) return;
+    if (!client) return;
 
-    const saved = JSON.parse(localStorage.getItem(SAVED_RESULTS_STORAGE) || "[]");
+    const { data: sessionData } = await client.auth.getSession();
+    const session = sessionData?.session;
+    if (!session) {
+      el.savedResultsEmpty.textContent = "Sign in to view saved results.";
+      el.savedResultsEmpty.style.display = "block";
+      el.savedResultsList.innerHTML = "";
+      return;
+    }
+
+    const { data, error } = await client
+      .from("saved_reports")
+      .select("id, pdf_url, original_image_url, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      el.savedResultsEmpty.textContent = "Unable to load saved results.";
+      el.savedResultsEmpty.style.display = "block";
+      el.savedResultsList.innerHTML = "";
+      return;
+    }
+
     el.savedResultsList.innerHTML = "";
-
-    if (!Array.isArray(saved) || saved.length === 0) {
+    if (!Array.isArray(data) || data.length === 0) {
+      el.savedResultsEmpty.textContent = "No saved results yet.";
       el.savedResultsEmpty.style.display = "block";
       return;
     }
 
     el.savedResultsEmpty.style.display = "none";
-    saved.forEach((item, index) => {
+    data.forEach((item, index) => {
       const card = document.createElement("div");
       card.className = "saved-result-card";
 
       const title = document.createElement("div");
       title.className = "saved-result-title";
-      const createdAt = item?.createdAt ? new Date(item.createdAt) : null;
-      title.textContent = createdAt && !Number.isNaN(createdAt.getTime())
-        ? createdAt.toLocaleString()
-        : `Saved Result ${index + 1}`;
+      title.textContent = `Saved Result ${index + 1}`;
 
       const preview = document.createElement("div");
       preview.className = "saved-result-preview";
-      const previewText = (item?.raw || item?.analysis || item?.corrected || "").trim();
-      preview.textContent = previewText ? previewText.slice(0, 140) : "(empty)";
+      preview.textContent = "PDF report available.";
+
+      const actions = document.createElement("div");
+      actions.className = "saved-result-actions";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "btn btn-secondary saved-result-open";
+      openBtn.textContent = "Open";
+      openBtn.addEventListener("click", async () => {
+        const stored = item?.pdf_url || "";
+        const pdfPath = extractStoragePath(stored, "reports") || stored;
+        if (!pdfPath) {
+          showToast("Saved PDF not available.");
+          return;
+        }
+
+        const { data: signed, error: signedError } = await client
+          .storage
+          .from("reports")
+          .createSignedUrl(pdfPath, 60 * 10);
+
+        if (signedError || !signed?.signedUrl) {
+          showToast("Unable to open the saved PDF.");
+          return;
+        }
+
+        openPdfPreview(signed.signedUrl);
+      });
+
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.className = "btn btn-secondary saved-result-download";
+      downloadBtn.textContent = "Download";
+      downloadBtn.addEventListener("click", async () => {
+        const stored = item?.pdf_url || "";
+        const pdfPath = extractStoragePath(stored, "reports") || stored;
+        if (!pdfPath) {
+          showToast("Saved PDF not available.");
+          return;
+        }
+
+        const { data: signed, error: signedError } = await client
+          .storage
+          .from("reports")
+          .createSignedUrl(pdfPath, 60 * 10);
+
+        if (signedError || !signed?.signedUrl) {
+          showToast("Unable to download the saved PDF.");
+          return;
+        }
+
+        const link = document.createElement("a");
+        link.href = signed.signedUrl;
+        link.download = pdfPath.split("/").pop() || "dyslexaread-report.pdf";
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      });
 
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "btn btn-secondary saved-result-delete";
       deleteBtn.textContent = "Delete";
-      deleteBtn.addEventListener("click", () => {
-        const next = saved.filter((_, i) => i !== index);
-        localStorage.setItem(SAVED_RESULTS_STORAGE, JSON.stringify(next));
-        renderSavedResults();
+      deleteBtn.addEventListener("click", async () => {
+        if (item?.pdf_url) {
+          const pdfPath = extractStoragePath(item.pdf_url, "reports") || item.pdf_url;
+          if (pdfPath) {
+            await client.storage.from("reports").remove([pdfPath]);
+          }
+        }
+        if (item?.original_image_url) {
+          const originalPath = extractStoragePath(item.original_image_url, "originals") || item.original_image_url;
+          if (originalPath) {
+            await client.storage.from("originals").remove([originalPath]);
+          }
+        }
+
+        await client.from("saved_reports").delete().eq("id", item.id);
+        await loadSavedResults();
         showToast("Saved result deleted.");
       });
 
+      actions.appendChild(openBtn);
+      actions.appendChild(downloadBtn);
+      actions.appendChild(deleteBtn);
       card.appendChild(title);
       card.appendChild(preview);
-      card.appendChild(deleteBtn);
+      card.appendChild(actions);
       el.savedResultsList.appendChild(card);
     });
-  }
-
-  function setApiKeyState(saved) {
-    if (!el.apiKeyState) return;
-    el.apiKeyState.textContent = saved ? "Saved" : "Not Saved";
-    el.apiKeyState.classList.toggle("is-saved", saved);
   }
 
   function setOpenRouterApiKeyState(saved) {
@@ -138,11 +200,31 @@
     el.openRouterApiKeyState.classList.toggle("is-saved", saved);
   }
 
+  const client = window.supabaseClient;
+
   function showToast(message) {
     if (!el.toast) return;
     el.toast.textContent = message;
     el.toast.classList.add("show");
     setTimeout(() => el.toast.classList.remove("show"), 2200);
+  }
+
+  function openPdfPreview(url) {
+    if (!el.pdfPreviewModal || !el.pdfPreviewFrame) return;
+    el.pdfPreviewFrame.src = url;
+    el.pdfPreviewModal.classList.add("is-open");
+    el.pdfPreviewModal.setAttribute("aria-hidden", "false");
+  }
+
+  function closePdfPreview() {
+    if (!el.pdfPreviewModal || !el.pdfPreviewFrame) return;
+    el.pdfPreviewFrame.src = "";
+    el.pdfPreviewModal.classList.remove("is-open");
+    el.pdfPreviewModal.setAttribute("aria-hidden", "true");
+  }
+
+  function buildDeletePhrase(username) {
+    return `I am deleting my account named ${username}`;
   }
 
   function applyTheme() {
@@ -152,17 +234,6 @@
 
 
   function loadSavedKeys() {
-    const stored = sanitizeApiKey(localStorage.getItem(GEMINI_API_KEY_STORAGE) || "");
-    if (stored && isProbablyGeminiApiKey(stored)) {
-      if (el.geminiApiKey) el.geminiApiKey.value = stored;
-      setApiKeyState(true);
-    } else {
-      if (stored) {
-        localStorage.removeItem(GEMINI_API_KEY_STORAGE);
-      }
-      setApiKeyState(false);
-    }
-
     const storedOpenRouter = sanitizeApiKey(localStorage.getItem(OPENROUTER_API_KEY_STORAGE) || "");
     if (storedOpenRouter && isProbablyOpenRouterApiKey(storedOpenRouter)) {
       if (el.openRouterApiKey) el.openRouterApiKey.value = storedOpenRouter;
@@ -174,54 +245,24 @@
       setOpenRouterApiKeyState(false);
     }
 
-    if (stored && isProbablyGeminiApiKey(stored)) {
-      setStatus("Gemini API key is saved in this browser.", "ok");
-      return;
-    }
-
     if (storedOpenRouter && isProbablyOpenRouterApiKey(storedOpenRouter)) {
       setStatus("OpenRouter API key is saved in this browser.", "ok");
-      renderSavedSummary();
       return;
     }
 
     setStatus("No valid API keys are currently saved.");
-    renderSavedSummary();
   }
 
   function setupEvents() {
-    if (el.saveApiKeyBtn && el.geminiApiKey) {
-      el.saveApiKeyBtn.addEventListener("click", () => {
-        const key = sanitizeApiKey(el.geminiApiKey.value || "");
-
-        if (!key) {
-          localStorage.removeItem(GEMINI_API_KEY_STORAGE);
-          setApiKeyState(false);
-          setStatus("Saved key cleared. Backend .env key will be used if configured.");
-          showToast("API key cleared.");
-          return;
-        }
-
-        if (!isProbablyGeminiApiKey(key)) {
-          setApiKeyState(false);
-          setStatus("Invalid Gemini API key format. Remove quotes/spaces and try again.", "error");
-          showToast("Invalid key format.");
-          return;
-        }
-
-        localStorage.setItem(GEMINI_API_KEY_STORAGE, key);
-        setApiKeyState(true);
-        setStatus("Gemini API key saved for this browser.", "ok");
-        showToast("API key saved.");
-        renderSavedSummary();
-      });
+    if (el.pdfPreviewClose) {
+      el.pdfPreviewClose.addEventListener("click", closePdfPreview);
     }
 
-    if (el.toggleApiKeyBtn && el.geminiApiKey) {
-      el.toggleApiKeyBtn.addEventListener("click", () => {
-        const show = el.geminiApiKey.type === "password";
-        el.geminiApiKey.type = show ? "text" : "password";
-        el.toggleApiKeyBtn.textContent = show ? "Hide" : "Show";
+    if (el.pdfPreviewModal) {
+      el.pdfPreviewModal.addEventListener("click", (event) => {
+        if (event.target && event.target.hasAttribute("data-modal-close")) {
+          closePdfPreview();
+        }
       });
     }
 
@@ -248,7 +289,6 @@
         setOpenRouterApiKeyState(true);
         setStatus("OpenRouter API key saved for this browser.", "ok");
         showToast("OpenRouter key saved.");
-        renderSavedSummary();
       });
     }
 
@@ -261,17 +301,86 @@
     }
 
     if (el.clearAllKeysBtn) {
-      el.clearAllKeysBtn.addEventListener("click", () => {
-        localStorage.removeItem(GEMINI_API_KEY_STORAGE);
-        localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
-        if (el.geminiApiKey) el.geminiApiKey.value = "";
-        if (el.openRouterApiKey) el.openRouterApiKey.value = "";
+      el.clearAllKeysBtn.addEventListener("click", async () => {
+        if (!client) {
+          setStatus("Supabase client not available.", "error");
+          return;
+        }
 
-        setApiKeyState(false);
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError || !sessionData?.session) {
+          setStatus("You must be signed in to delete your account.", "error");
+          return;
+        }
+
+        const userId = sessionData.session.user.id;
+        const fallbackName = sessionData.session.user.email || "user";
+
+        const avatarPaths = [];
+        const reportPaths = [];
+        const originalPaths = [];
+
+        const { data: profileData } = await client
+          .from("profiles")
+          .select("avatar_url, username")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        const username = profileData?.username || fallbackName;
+        const deletePhrase = buildDeletePhrase(username);
+        if (el.deleteInstruction) {
+          el.deleteInstruction.textContent = deletePhrase;
+        }
+        const typed = window.prompt(`Type this to confirm:\n${deletePhrase}`, "");
+        if (typed !== deletePhrase) {
+          setStatus("Deletion canceled. Enter the exact phrase to continue.", "error");
+          return;
+        }
+
+        setStatus("Deleting account...", "");
+
+        if (profileData?.avatar_url) {
+          const avatarPath = extractStoragePath(profileData.avatar_url, "avatars");
+          if (avatarPath) avatarPaths.push(avatarPath);
+        }
+
+        const { data: reportsData } = await client
+          .from("saved_reports")
+          .select("pdf_url, original_image_url")
+          .eq("user_id", userId);
+
+        (reportsData || []).forEach((report) => {
+          const pdfPath = extractStoragePath(report?.pdf_url, "reports");
+          if (pdfPath) reportPaths.push(pdfPath);
+          const originalPath = extractStoragePath(report?.original_image_url, "originals");
+          if (originalPath) originalPaths.push(originalPath);
+        });
+
+        if (avatarPaths.length) {
+          await client.storage.from("avatars").remove(avatarPaths);
+        }
+        if (reportPaths.length) {
+          await client.storage.from("reports").remove(reportPaths);
+        }
+        if (originalPaths.length) {
+          await client.storage.from("originals").remove(originalPaths);
+        }
+
+        const { error: deleteError } = await client.rpc("delete_user_account");
+        if (deleteError) {
+          setStatus(deleteError.message || "Unable to delete account.", "error");
+          return;
+        }
+
+        await client.auth.signOut();
+
+        localStorage.removeItem(OPENROUTER_API_KEY_STORAGE);
+        localStorage.removeItem(THEME_STORAGE);
+        if (el.openRouterApiKey) el.openRouterApiKey.value = "";
         setOpenRouterApiKeyState(false);
-        setStatus("Account data removed from this browser profile.", "ok");
-        showToast("Account deleted from local profile.");
-        renderSavedSummary();
+        setStatus("Account deleted.", "ok");
+        showToast("Account deleted.");
+        window.location.href = "auth.html";
       });
     }
 
@@ -283,8 +392,29 @@
     });
   }
 
+  function extractStoragePath(value, bucket) {
+    if (!value) return "";
+    if (!bucket) return "";
+    if (!value.startsWith("http")) return value;
+
+    const publicPrefix = `/storage/v1/object/public/${bucket}/`;
+    const signedPrefix = `/storage/v1/object/sign/${bucket}/`;
+
+    const publicIndex = value.indexOf(publicPrefix);
+    if (publicIndex !== -1) {
+      return value.slice(publicIndex + publicPrefix.length).split("?")[0];
+    }
+
+    const signedIndex = value.indexOf(signedPrefix);
+    if (signedIndex !== -1) {
+      return value.slice(signedIndex + signedPrefix.length).split("?")[0];
+    }
+
+    return "";
+  }
+
   applyTheme();
   loadSavedKeys();
-  renderSavedResults();
+  loadSavedResults();
   setupEvents();
 })();

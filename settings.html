@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DyslexaRead Settings</title>
-  <meta name="description" content="Manage DyslexaRead local settings and Gemini API key." />
+  <meta name="description" content="Manage DyslexaRead local settings and API access." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -36,7 +36,7 @@
         </nav>
 
         <div class="settings-content">
-          <section class="settings-pane is-active" data-settings-panel="profile">
+          <section class="settings-pane is-active" data-settings-panel="profile" data-profile-form>
             <h2 class="settings-heading">Profile</h2>
 
             <div class="profile-avatar-block">
@@ -98,31 +98,12 @@
             <div class="api-key-row">
               <div class="api-key-head">
                 <div>
-                  <p class="api-key-kicker">Secure Access</p>
-                  <p class="api-key-title">Gemini API Key</p>
-                </div>
-                <span id="apiKeyState" class="api-key-state">Not Saved</span>
-              </div>
-              <p class="api-key-subtext">Insert your key, save it once, and analyze instantly. Your key stays in this browser.</p>
-              <div class="api-key-controls">
-                <div class="api-key-input-wrap">
-                  <input id="geminiApiKey" type="password" placeholder="Paste your Gemini API key" autocomplete="off" />
-                  <button id="toggleApiKeyBtn" class="api-key-toggle" type="button" aria-label="Show or hide API key">Show</button>
-                </div>
-                <button id="saveApiKeyBtn" class="btn btn-primary api-save-btn" type="button">Save Key</button>
-              </div>
-              <p class="api-key-note">Tip: If empty, backend .env key will be used.</p>
-            </div>
-
-            <div class="api-key-row">
-              <div class="api-key-head">
-                <div>
                   <p class="api-key-kicker">Optional Access</p>
                   <p class="api-key-title">OpenRouter API Key</p>
                 </div>
                 <span id="openRouterApiKeyState" class="api-key-state">Not Saved</span>
               </div>
-              <p class="api-key-subtext">Store an OpenRouter key for future model routing support.</p>
+              <p class="api-key-subtext">Store an OpenRouter key for optional model routing support.</p>
               <div class="api-key-controls">
                 <div class="api-key-input-wrap">
                   <input id="openRouterApiKey" type="password" placeholder="Paste your OpenRouter API key" autocomplete="off" />
@@ -138,22 +119,14 @@
 
           <section class="settings-pane" data-settings-panel="delete" hidden>
             <h2 class="settings-heading">Delete Account</h2>
-            <p class="panel-subtext">Remove your account data from this browser profile. This action cannot be undone.</p>
+            <p class="panel-subtext">Permanently erase your account and related data from Supabase. This action cannot be undone.</p>
+            <p class="panel-subtext">Type <strong id="deleteInstruction">I am deleting my account named user_name</strong> to confirm.</p>
             <button id="clearAllKeysBtn" class="btn btn-secondary" type="button">Delete Account</button>
           </section>
 
           <section class="settings-pane" data-settings-panel="saved" hidden>
-            <h2 class="settings-heading">Saved</h2>
-            <div class="saved-grid">
-              <p>Gemini Key</p>
-              <p id="savedGeminiValue" class="saved-value">Not Saved</p>
-              <p>OpenRouter Key</p>
-              <p id="savedOpenRouterValue" class="saved-value">Not Saved</p>
-              <p>Theme</p>
-              <p id="savedThemeValue" class="saved-value">Light</p>
-            </div>
+            <h2 class="settings-heading">Saved Result</h2>
             <div class="saved-results">
-              <h3 class="settings-subheading">Saved Results</h3>
               <p id="savedResultsEmpty" class="panel-subtext">No saved results yet.</p>
               <div id="savedResultsList" class="saved-results-list"></div>
             </div>
@@ -163,11 +136,25 @@
     </section>
   </main>
 
+  <div id="pdfPreviewModal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card" role="document">
+      <div class="modal-header">
+        <h3 id="pdfPreviewTitle" class="modal-title">Saved Result Preview</h3>
+        <button id="pdfPreviewClose" class="btn btn-secondary" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <iframe id="pdfPreviewFrame" class="modal-frame" title="Saved PDF preview" loading="lazy"></iframe>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.6/dist/umd/supabase.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
   <script src="supabase-client.js" defer></script>
-  <script src="settings.js?v=20260505-1" defer></script>
-  <script src="profile.js?v=20260505-1" defer></script>
+  <script src="settings.js?v=20260506-4" defer></script>
+  <script src="profile.js?v=20260506-1" defer></script>
 </body>
 </html>

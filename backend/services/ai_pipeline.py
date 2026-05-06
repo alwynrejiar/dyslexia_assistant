@@ -20,6 +20,7 @@ import model
 logger = logging.getLogger(__name__)
 
 _CLIENT: Optional[object] = None
+_OPENROUTER_KEY: Optional[str] = None
 _PLACEHOLDER_KEYS = {
     "your_key_here",
     "your-api-key",
@@ -52,48 +53,46 @@ def _is_placeholder_key(value: str) -> bool:
     return value.strip().lower() in _PLACEHOLDER_KEYS
 
 
-def _read_key_from_env_file(path: Path) -> str:
+def _read_key_from_env_file(path: Path, var_name: str) -> str:
     if not path.exists():
         return ""
     try:
-        return _clean_api_key(str(dotenv_values(path).get("GEMINI_API_KEY", "")))
+        return _clean_api_key(str(dotenv_values(path).get(var_name, "")))
     except Exception:
         return ""
 
 
 def initialize_client(api_key: Optional[str] = None) -> bool:
     global _CLIENT
+    global _OPENROUTER_KEY
 
     backend_env = Path(__file__).resolve().parents[1] / ".env"
     root_env = PROJECT_ROOT / ".env"
 
-    requested_key = _clean_api_key(api_key)
-    runtime_env_key = _clean_api_key(os.getenv("GEMINI_API_KEY", ""))
-    root_file_key = _read_key_from_env_file(root_env)
-    backend_file_key = _read_key_from_env_file(backend_env)
+    runtime_openrouter_key = _clean_api_key(os.getenv("OPENROUTER_API_KEY", ""))
+    root_openrouter_key = _read_key_from_env_file(root_env, "OPENROUTER_API_KEY")
+    backend_openrouter_key = _read_key_from_env_file(backend_env, "OPENROUTER_API_KEY")
 
-    key_candidates = [requested_key, runtime_env_key, root_file_key, backend_file_key]
-    key = ""
-    for candidate in key_candidates:
+    openrouter_candidates = [runtime_openrouter_key, root_openrouter_key, backend_openrouter_key]
+    openrouter_key = ""
+    for candidate in openrouter_candidates:
         if candidate and not _is_placeholder_key(candidate):
-            key = candidate
+            openrouter_key = candidate
             break
 
-    if not key:
-        logger.warning("GEMINI_API_KEY is missing. /analyze will fail until configured.")
-        _CLIENT = None
-        return False
+    if openrouter_key:
+        _OPENROUTER_KEY = openrouter_key
+        logger.info("OpenRouter key loaded")
+        return True
 
-    if backend_file_key and _is_placeholder_key(backend_file_key):
-        logger.warning("Ignoring placeholder GEMINI_API_KEY in backend/.env")
-
-    _CLIENT = model.make_client(key)
-    logger.info("Gemini client initialized")
-    return True
+    logger.warning("OPENROUTER_API_KEY is missing. /analyze will fail until configured.")
+    _CLIENT = None
+    _OPENROUTER_KEY = None
+    return False
 
 
 def client_ready() -> bool:
-    return _CLIENT is not None
+    return _CLIENT is not None or _OPENROUTER_KEY is not None
 
 
 def _run_with_client(client: object, image_bytes: bytes, media_type: str) -> tuple[str, str, str]:
@@ -214,10 +213,11 @@ def _openrouter_request(
 
 
 def run_pipeline(image_bytes: bytes, media_type: str) -> tuple[str, str, str]:
-    if _CLIENT is None:
-        raise RuntimeError("Gemini client is not initialized")
-
-    return _run_with_client(_CLIENT, image_bytes, media_type)
+    if _OPENROUTER_KEY:
+        return run_pipeline_with_openrouter_api_key(image_bytes, media_type, _OPENROUTER_KEY)
+    if _CLIENT is not None:
+        return _run_with_client(_CLIENT, image_bytes, media_type)
+    raise RuntimeError("OpenRouter key is not initialized")
 
 
 def run_pipeline_with_api_key(image_bytes: bytes, media_type: str, api_key: str) -> tuple[str, str, str]:

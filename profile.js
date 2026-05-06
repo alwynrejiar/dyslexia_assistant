@@ -17,12 +17,27 @@
     saveBtn: document.getElementById("saveProfileBtn"),
     status: document.getElementById("profileStatus"),
     toast: document.getElementById("toast"),
+    form: document.querySelector("[data-profile-form]"),
   };
 
   const LEGACY_DEFAULT_AVATAR_URL = "https://images.unsplash.com/photo-1544005313-94ddf0286df2";
   const shouldRedirectOnSave = !window.location.pathname.endsWith("settings.html");
+  const LAST_REPORT_STORAGE = "dyslexaread:lastReport";
+  const MAX_SAVED_REPORTS = 25;
   let avatarPath = "";
   let avatarUrl = "";
+  let isEditing = true;
+
+  const formInputs = [
+    el.name,
+    el.age,
+    el.roleCustom,
+    el.languages,
+    el.email,
+    el.username,
+  ];
+
+  const formSelects = [el.role];
 
   function showToast(message) {
     if (!el.toast) return;
@@ -35,6 +50,38 @@
     if (!el.status) return;
     el.status.textContent = message;
     el.status.className = `status-text ${mode}`.trim();
+  }
+
+  function setEditing(enabled, { silent = false } = {}) {
+    isEditing = enabled;
+    if (el.form) {
+      el.form.classList.toggle("profile-locked", !enabled);
+    }
+
+    formInputs.forEach((input) => {
+      if (!input) return;
+      input.readOnly = !enabled;
+      input.tabIndex = enabled ? 0 : -1;
+    });
+
+    formSelects.forEach((select) => {
+      if (!select) return;
+      select.disabled = !enabled;
+      select.tabIndex = enabled ? 0 : -1;
+    });
+
+    if (el.avatarBtn) {
+      el.avatarBtn.disabled = !enabled;
+      el.avatarBtn.style.display = enabled ? "inline-flex" : "none";
+    }
+    if (el.avatarInput) {
+      el.avatarInput.disabled = !enabled;
+    }
+    if (el.saveBtn) el.saveBtn.textContent = enabled ? "Save Profile" : "Edit Profile";
+
+    if (!silent) {
+      setStatus(enabled ? "Edit mode enabled." : "Profile locked.", "ok");
+    }
   }
 
   function slugify(value) {
@@ -119,6 +166,7 @@
       }
       applyAvatar(avatarUrl, data.name || user.email || "");
       toggleCustomRole();
+      setEditing(false, { silent: true });
       return;
     }
 
@@ -127,6 +175,7 @@
     if (el.username) {
       el.username.value = await generateUsername(el.name.value);
     }
+    setEditing(true, { silent: true });
   }
 
   function toggleCustomRole() {
@@ -191,11 +240,229 @@
       return;
     }
 
+    await saveLatestReportToSupabase();
+    setEditing(false, { silent: true });
     setStatus("Profile saved.", "ok");
     showToast("Profile updated.");
     if (shouldRedirectOnSave) {
       window.location.href = "app.html";
     }
+  }
+
+  async function saveLatestReportToSupabase() {
+    if (!client) return;
+    const raw = localStorage.getItem(LAST_REPORT_STORAGE);
+    if (!raw) {
+      showToast("No recent analysis to attach.");
+      return;
+    }
+
+    let latest;
+    try {
+      latest = JSON.parse(raw);
+    } catch (_error) {
+      return;
+    }
+
+    const { data: sessionData } = await client.auth.getSession();
+    const session = sessionData?.session;
+    if (!session) return;
+
+    const { count } = await client
+      .from("saved_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", session.user.id);
+    if (count !== null && count >= MAX_SAVED_REPORTS) {
+      showToast("Profile already has 25 saved reports.");
+      return;
+    }
+
+    const jsPDF = window.jspdf?.jsPDF;
+    if (!jsPDF) {
+      showToast("PDF export unavailable. Please refresh and try again.");
+      return;
+    }
+
+    const corrected = latest.corrected || "";
+    const originalImage = latest.originalImageDataUrl || "";
+    const originalWidth = Number(latest.originalWidth) || 0;
+    const originalHeight = Number(latest.originalHeight) || 0;
+    const correctedImage = buildCorrectedImageDataUrl(corrected, originalWidth, originalHeight);
+
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 40;
+    const gap = 20;
+    const columnWidth = (pageWidth - margin * 2 - gap) / 2;
+    const imageBoxHeight = 260;
+    const startY = 70;
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(16);
+    doc.text("DyslexaRead Corrected Text", margin, 40);
+
+    const originalDims = getImageDimensions(originalWidth, originalHeight);
+    const correctedDims = getImageDimensions(originalWidth, originalHeight);
+
+    const leftBox = { x: margin, y: startY, w: columnWidth, h: imageBoxHeight };
+    const rightBox = { x: margin + columnWidth + gap, y: startY, w: columnWidth, h: imageBoxHeight };
+
+    doc.setFontSize(12);
+    doc.text("Original Image", leftBox.x, leftBox.y - 10);
+    doc.text("Corrected Image", rightBox.x, rightBox.y - 10);
+
+    drawImageOrPlaceholder(doc, originalImage, leftBox, originalDims);
+    drawImageOrPlaceholder(doc, correctedImage, rightBox, correctedDims);
+
+    const textStartY = startY + imageBoxHeight + 30;
+    const maxTextWidth = pageWidth - margin * 2;
+    doc.setFontSize(12);
+    const lines = doc.splitTextToSize(corrected || "", maxTextWidth);
+    doc.text(lines, margin, textStartY, { maxWidth: maxTextWidth });
+
+    const pdfBlob = doc.output("blob");
+    await uploadReportAssets(session.user.id, pdfBlob, originalImage);
+    showToast("Saved result attached.");
+  }
+
+  async function uploadReportAssets(userId, pdfBlob, originalImageDataUrl) {
+    const timestamp = Date.now();
+    const pdfPath = `${userId}/${timestamp}.pdf`;
+    const pdfUpload = await client
+      .storage
+      .from("reports")
+      .upload(pdfPath, pdfBlob, { contentType: "application/pdf" });
+    if (pdfUpload.error) throw pdfUpload.error;
+
+    let originalPath = null;
+    if (originalImageDataUrl) {
+      const blob = dataUrlToBlob(originalImageDataUrl);
+      if (blob) {
+        const ext = blob.type.split("/")[1] || "png";
+        const imagePath = `${userId}/${timestamp}.${ext}`;
+        const imgUpload = await client
+          .storage
+          .from("originals")
+          .upload(imagePath, blob, { contentType: blob.type });
+        if (!imgUpload.error) {
+          originalPath = imagePath;
+        }
+      }
+    }
+
+    await client.from("saved_reports").insert({
+      user_id: userId,
+      pdf_url: pdfPath,
+      original_image_url: originalPath,
+    });
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    const parts = dataUrl.split(",");
+    if (parts.length < 2) return null;
+    const match = parts[0].match(/data:(.*);base64/);
+    if (!match) return null;
+    const mime = match[1];
+    const binary = atob(parts[1]);
+    const array = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      array[i] = binary.charCodeAt(i);
+    }
+    return new Blob([array], { type: mime });
+  }
+
+  function getImageDimensions(width, height) {
+    const w = Number(width) || 0;
+    const h = Number(height) || 0;
+    if (w > 0 && h > 0) return { width: w, height: h };
+    return { width: 4, height: 3 };
+  }
+
+  function fitToBox(srcWidth, srcHeight, boxWidth, boxHeight) {
+    const ratio = Math.min(boxWidth / srcWidth, boxHeight / srcHeight);
+    return {
+      width: srcWidth * ratio,
+      height: srcHeight * ratio,
+    };
+  }
+
+  function drawImageOrPlaceholder(doc, dataUrl, box, dims) {
+    if (!dataUrl) {
+      doc.setDrawColor(180);
+      doc.rect(box.x, box.y, box.w, box.h);
+      doc.setTextColor(120);
+      doc.setFontSize(10);
+      doc.text("Image unavailable", box.x + 10, box.y + 20);
+      doc.setTextColor(0);
+      return;
+    }
+
+    const fit = fitToBox(dims.width, dims.height, box.w, box.h);
+    const x = box.x + (box.w - fit.width) / 2;
+    const y = box.y + (box.h - fit.height) / 2;
+    doc.addImage(dataUrl, "PNG", x, y, fit.width, fit.height);
+    doc.setDrawColor(220);
+    doc.rect(box.x, box.y, box.w, box.h);
+  }
+
+  function buildCorrectedImageDataUrl(text, width, height) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    const padding = Math.max(20, Math.round((Math.min(width, height) || 360) * 0.06));
+    const targetWidth = Math.max(360, Number(width) || 0) || 720;
+    const targetHeight = Math.max(240, Number(height) || 0) || 360;
+    const maxWidth = Math.max(180, targetWidth - padding * 2);
+
+    let fontSize = Math.max(18, Math.min(48, Math.round(targetHeight * 0.06)));
+    let lineHeight = 22;
+    let lines = [];
+    let attempts = 0;
+    while (attempts < 12) {
+      ctx.font = `${fontSize}px Courier New`;
+      lines = wrapTextLines(ctx, text, maxWidth);
+      lineHeight = Math.round(fontSize * 1.35);
+      if (lines.length * lineHeight <= targetHeight - padding * 2) {
+        break;
+      }
+      fontSize -= 1;
+      attempts += 1;
+    }
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#111111";
+    ctx.font = `${fontSize}px Courier New`;
+
+    const maxLines = Math.floor((targetHeight - padding * 2) / lineHeight) || lines.length;
+    lines.slice(0, maxLines).forEach((line, index) => {
+      ctx.fillText(line, padding, padding + (index + 1) * lineHeight - 4);
+    });
+
+    return canvas.toDataURL("image/png");
+  }
+
+  function wrapTextLines(ctx, text, maxWidth) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    const lines = [];
+    let current = "";
+
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (ctx.measureText(next).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    });
+
+    if (current) lines.push(current);
+    if (lines.length === 0) lines.push("");
+    return lines;
   }
 
   async function persistAvatar(userId) {
@@ -248,11 +515,15 @@
 
 
   if (el.role) {
-    el.role.addEventListener("change", toggleCustomRole);
+    el.role.addEventListener("change", () => {
+      if (!isEditing) return;
+      toggleCustomRole();
+    });
   }
 
   if (el.name) {
     el.name.addEventListener("blur", async () => {
+      if (!isEditing) return;
       if (!el.username.value) {
         el.username.value = await generateUsername(el.name.value);
       }
@@ -272,6 +543,8 @@
       const session = sessionData?.session;
       if (!session) return;
 
+      const previousAvatarPath = avatarPath;
+
       const ext = file.name.split(".").pop() || "png";
       const path = `${session.user.id}/${Date.now()}.${ext}`;
       const { error } = await client.storage
@@ -287,6 +560,15 @@
 
       await persistAvatar(session.user.id);
 
+      if (previousAvatarPath && previousAvatarPath !== avatarPath) {
+        const { error: removeError } = await client.storage
+          .from("avatars")
+          .remove([previousAvatarPath]);
+        if (removeError) {
+          setStatus(removeError.message || "Unable to remove previous avatar.", "error");
+        }
+      }
+
       applyAvatar(avatarUrl, el.name.value || el.email.value);
       el.avatarInput.value = "";
       showToast("Profile photo updated.");
@@ -294,7 +576,13 @@
   }
 
   if (el.saveBtn) {
-    el.saveBtn.addEventListener("click", saveProfile);
+    el.saveBtn.addEventListener("click", () => {
+      if (!isEditing) {
+        setEditing(true);
+        return;
+      }
+      saveProfile();
+    });
   }
 
   loadProfile();

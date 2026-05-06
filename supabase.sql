@@ -38,6 +38,9 @@ create policy "Profiles are self insert" on public.profiles
 create policy "Profiles are self update" on public.profiles
   for update using (auth.uid() = user_id);
 
+create policy "Profiles are self delete" on public.profiles
+  for delete using (auth.uid() = user_id);
+
 create policy "Reports are self readable" on public.saved_reports
   for select using (auth.uid() = user_id);
 
@@ -46,6 +49,22 @@ create policy "Reports are self insert" on public.saved_reports
 
 create policy "Reports are self delete" on public.saved_reports
   for delete using (auth.uid() = user_id);
+
+create or replace function public.delete_user_account()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.saved_reports where user_id = auth.uid();
+  delete from public.profiles where user_id = auth.uid();
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+revoke all on function public.delete_user_account() from public;
+grant execute on function public.delete_user_account() to authenticated;
 
 -- Storage: create buckets named 'reports', 'originals', and 'avatars' in Supabase Storage.
 -- Make them public, or add policies similar to above for authenticated users.

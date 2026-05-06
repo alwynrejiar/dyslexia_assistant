@@ -14,10 +14,6 @@
   };
 
   const el = {
-    geminiApiKey: document.getElementById("geminiApiKey"),
-    saveApiKeyBtn: document.getElementById("saveApiKeyBtn"),
-    toggleApiKeyBtn: document.getElementById("toggleApiKeyBtn"),
-    apiKeyState: document.getElementById("apiKeyState"),
     fileInput: document.getElementById("fileInput"),
     uploadBtn: document.getElementById("uploadBtn"),
     dropZone: document.getElementById("dropZone"),
@@ -35,6 +31,7 @@
     progressBar: document.getElementById("progressBar"),
     statusText: document.getElementById("statusText"),
     themeToggleBtn: document.getElementById("themeToggleBtn"),
+    logoutBtn: document.getElementById("logoutBtn"),
     saveResultsBtn: document.getElementById("saveResultsBtn"),
     resultsPanel: document.querySelector(".results-panel"),
     errorBanner: document.getElementById("errorBanner"),
@@ -49,13 +46,16 @@
     toast: document.getElementById("toast"),
   };
 
-  const API_KEY_STORAGE = "dyslexaread:geminiApiKey";
   const OPENROUTER_API_KEY_STORAGE = "dyslexaread:openrouterApiKey";
   const API_BASE_STORAGE = "dyslexaread:apiBaseUrl";
   const THEME_STORAGE = "dyslexaread:theme";
+  const DEFAULT_API_BASE = "https://dyslexia-assistant.onrender.com";
+  const LAST_REPORT_STORAGE = "dyslexaread:lastReport";
   const SAVED_RESULTS_STORAGE = "savedDyslexiaResults";
   const REQUEST_TIMEOUT_MS = 120000;
   const MAX_SAVED_REPORTS = 25;
+
+  localStorage.removeItem("dyslexaread:geminiApiKey");
 
   const recentHistory = [];
 
@@ -109,6 +109,9 @@
     if (window.location.port && window.location.port !== "5500") {
       candidates.push(`${window.location.protocol}//${window.location.host}`);
     }
+    if (DEFAULT_API_BASE) {
+      candidates.push(DEFAULT_API_BASE);
+    }
     candidates.push("http://127.0.0.1:8000", "http://127.0.0.1:8001");
 
     for (const base of candidates) {
@@ -118,7 +121,7 @@
       }
     }
 
-    return saved || (window.location.port === "5500" ? "http://127.0.0.1:8001" : "");
+    return saved || DEFAULT_API_BASE || (window.location.port === "5500" ? "http://127.0.0.1:8001" : "");
   }
 
   function sanitizeApiKey(value) {
@@ -132,10 +135,6 @@
     }
 
     return key;
-  }
-
-  function isProbablyGeminiApiKey(value) {
-    return /^AIza[\w-]{20,}$/.test(value);
   }
 
   function isProbablyOpenRouterApiKey(value) {
@@ -188,11 +187,7 @@
     const text = String(rawMessage || "");
 
     if (/OpenRouter credits|OpenRouter.*quota|insufficient.*credits|Payment Required/i.test(text)) {
-      return "OpenRouter credits are insufficient. Add credits in OpenRouter, or clear OpenRouter key to use Gemini backend key.";
-    }
-
-    if (/API_KEY_INVALID|API key not valid|Invalid Gemini API key/i.test(text)) {
-      return "Backend configuration error: Invalid API key. Please contact the developer.";
+      return "OpenRouter credits are insufficient. Add credits in OpenRouter and try again.";
     }
 
     if (/timed out|timeout/i.test(text)) {
@@ -252,12 +247,6 @@
     if (!el.statusText) return;
     el.statusText.textContent = message;
     el.statusText.className = `status-text ${mode}`.trim();
-  }
-
-  function setApiKeyState(saved) {
-    if (!el.apiKeyState) return;
-    el.apiKeyState.textContent = saved ? "Saved" : "Not Saved";
-    el.apiKeyState.classList.toggle("is-saved", saved);
   }
 
   function setProgress(value) {
@@ -359,6 +348,9 @@
       analysis: typeof data.analysis === "string" ? data.analysis : "",
       corrected: typeof data.corrected === "string" ? data.corrected : "",
       createdAt: data.createdAt || new Date().toISOString(),
+      originalImageDataUrl: data.originalImageDataUrl || "",
+      originalWidth: data.originalWidth || 0,
+      originalHeight: data.originalHeight || 0,
     };
   }
 
@@ -371,12 +363,70 @@
     renderRecentHistory();
   }
 
+  function removeFromRecentHistory(resultId) {
+    const index = recentHistory.findIndex((item) => item.id === resultId);
+    if (index === -1) return;
+    recentHistory.splice(index, 1);
+    renderRecentHistory();
+  }
+
   function saveResultToProfile(result) {
     const normalized = normalizeResultData(result);
-    const saved = JSON.parse(localStorage.getItem(SAVED_RESULTS_STORAGE) || "[]");
-    saved.push(normalized);
-    localStorage.setItem(SAVED_RESULTS_STORAGE, JSON.stringify(saved));
-    showToast("Saved to profile.");
+    saveReportFromResult(normalized).catch(() => {
+      showToast("Saved locally. Supabase upload failed.");
+    });
+  }
+
+  async function saveReportFromResult(result) {
+    if (!result) return;
+    const corrected = result.corrected || "";
+    const originalImage = result.originalImageDataUrl || "";
+    const originalWidth = result.originalWidth || 0;
+    const originalHeight = result.originalHeight || 0;
+    const correctedImage = buildCorrectedImageDataUrl(corrected, originalWidth, originalHeight);
+    const jsPDF = window.jspdf?.jsPDF;
+    if (!jsPDF) {
+      showToast("PDF export unavailable. Please refresh and try again.");
+      return;
+    }
+
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 40;
+    const gap = 20;
+    const columnWidth = (pageWidth - margin * 2 - gap) / 2;
+    const imageBoxHeight = 260;
+    const startY = 70;
+
+    doc.setFont("courier", "normal");
+    doc.setFontSize(16);
+    doc.text("DyslexaRead Corrected Text", margin, 40);
+
+    const originalDims = getImageDimensions(originalWidth, originalHeight);
+    const correctedDims = getImageDimensions(originalWidth, originalHeight);
+
+    const leftBox = { x: margin, y: startY, w: columnWidth, h: imageBoxHeight };
+    const rightBox = { x: margin + columnWidth + gap, y: startY, w: columnWidth, h: imageBoxHeight };
+
+    doc.setFontSize(12);
+    doc.text("Original Image", leftBox.x, leftBox.y - 10);
+    doc.text("Corrected Image", rightBox.x, rightBox.y - 10);
+
+    drawImageOrPlaceholder(doc, originalImage, leftBox, originalDims);
+    drawImageOrPlaceholder(doc, correctedImage, rightBox, correctedDims);
+
+    const textStartY = startY + imageBoxHeight + 30;
+    const maxTextWidth = pageWidth - margin * 2;
+    doc.setFontSize(12);
+    const lines = doc.splitTextToSize(corrected || "", maxTextWidth);
+    doc.text(lines, margin, textStartY, { maxWidth: maxTextWidth });
+
+    const pdfBlob = doc.output("blob");
+    if (supabaseClient) {
+      await saveReportToSupabase(pdfBlob, originalImage);
+      removeFromRecentHistory(result.id);
+      showToast("Saved to profile.");
+    }
   }
 
   function renderRecentHistory() {
@@ -750,17 +800,8 @@
       const compressed = await compressImageFile(fileToAnalyze);
       formData.append("file", compressed);
 
-      const enteredKey = sanitizeApiKey(el.geminiApiKey?.value || "");
-      const savedKey = sanitizeApiKey(localStorage.getItem(API_KEY_STORAGE) || "");
-      const effectiveKey = enteredKey || savedKey;
       const savedOpenRouterKey = sanitizeApiKey(localStorage.getItem(OPENROUTER_API_KEY_STORAGE) || "");
-      const hasValidUserKey = effectiveKey && isProbablyGeminiApiKey(effectiveKey);
       const headers = {};
-      if (hasValidUserKey) {
-        headers["x-gemini-api-key"] = effectiveKey;
-      } else if (enteredKey) {
-        setStatus("Entered API key format looks invalid. Falling back to backend key (.env) if available.", "error");
-      }
 
       if (savedOpenRouterKey && isProbablyOpenRouterApiKey(savedOpenRouterKey)) {
         headers["x-openrouter-api-key"] = savedOpenRouterKey;
@@ -786,55 +827,6 @@
       if (!response.ok) {
         const errPayload = await parseErrorResponse(response);
 
-        // If user-provided key is invalid, automatically retry once without it
-        // so backend .env key can still be used.
-        if (
-          hasValidUserKey &&
-          /API_KEY_INVALID|API key not valid|Invalid Gemini API key/i.test(errPayload.rawMessage)
-        ) {
-          showToast("User API key rejected. Retrying with backend key...");
-          localStorage.removeItem(API_KEY_STORAGE);
-          setApiKeyState(false);
-          if (el.geminiApiKey) el.geminiApiKey.value = "";
-
-          const fallbackResponse = await fetch(analyzeUrl, {
-            method: "POST",
-            body: formData,
-            signal: controller.signal,
-          });
-
-          if (!fallbackResponse.ok) {
-            const fallbackErr = await parseErrorResponse(fallbackResponse);
-            throw new Error(mapFriendlyError(fallbackErr.rawMessage, fallbackErr.status));
-          }
-
-          let fallbackData;
-          try {
-            fallbackData = await fallbackResponse.json();
-          } catch (_jsonError) {
-            throw new Error("Server error: Invalid JSON response from backend.");
-          }
-          if (!fallbackData || typeof fallbackData !== "object") {
-            throw new Error("Invalid API response format.");
-          }
-
-          await renderResults(fallbackData);
-          state.resultData = normalizeResultData({
-            raw: fallbackData.raw || "",
-            analysis: fallbackData.analysis || "",
-            corrected: fallbackData.corrected || "",
-            createdAt: new Date().toISOString(),
-          });
-          addToRecentHistory(state.resultData);
-          el.saveResultsBtn.disabled = false;
-          setStatus("Analysis complete using backend key.", "ok");
-          hideErrorBanner();
-          if (!silent) showToast("Results updated.");
-          stopFakeProgress(true);
-          switchTab("raw");
-          return;
-        }
-
         throw new Error(mapFriendlyError(errPayload.rawMessage, errPayload.status));
       }
 
@@ -849,13 +841,18 @@
       }
 
       await renderResults(data);
+      const originalInfo = await getOriginalImageInfo();
       state.resultData = normalizeResultData({
         raw: data.raw || "",
         analysis: data.analysis || "",
         corrected: data.corrected || "",
         createdAt: new Date().toISOString(),
+        originalImageDataUrl: originalInfo.dataUrl || "",
+        originalWidth: originalInfo.width || 0,
+        originalHeight: originalInfo.height || 0,
       });
       addToRecentHistory(state.resultData);
+      await storeLatestReportData(state.resultData);
       el.saveResultsBtn.disabled = false;
       setStatus("Analysis complete.", "ok");
       if (!silent) showToast("Results updated.");
@@ -938,6 +935,21 @@
     }
   }
 
+  async function storeLatestReportData(resultData) {
+    if (!resultData) return;
+    const originalInfo = await getOriginalImageInfo();
+    const payload = {
+      raw: resultData.raw || "",
+      analysis: resultData.analysis || "",
+      corrected: resultData.corrected || "",
+      createdAt: resultData.createdAt || new Date().toISOString(),
+      originalImageDataUrl: originalInfo.dataUrl || "",
+      originalWidth: originalInfo.width || 0,
+      originalHeight: originalInfo.height || 0,
+    };
+    localStorage.setItem(LAST_REPORT_STORAGE, JSON.stringify(payload));
+  }
+
   function dataUrlToBlob(dataUrl) {
     const parts = dataUrl.split(",");
     if (parts.length < 2) return null;
@@ -978,7 +990,7 @@
       .upload(pdfPath, pdfBlob, { contentType: "application/pdf" });
     if (pdfUpload.error) throw pdfUpload.error;
 
-    let originalUrl = null;
+    let originalPath = null;
     if (originalImageDataUrl) {
       const blob = dataUrlToBlob(originalImageDataUrl);
       if (blob) {
@@ -989,16 +1001,14 @@
           .from("originals")
           .upload(imagePath, blob, { contentType: blob.type });
         if (!imgUpload.error) {
-          originalUrl = supabaseClient.storage.from("originals").getPublicUrl(imagePath).data.publicUrl;
+          originalPath = imagePath;
         }
       }
     }
-
-    const pdfUrl = supabaseClient.storage.from("reports").getPublicUrl(pdfPath).data.publicUrl;
     await supabaseClient.from("saved_reports").insert({
       user_id: userId,
-      pdf_url: pdfUrl,
-      original_image_url: originalUrl,
+      pdf_url: pdfPath,
+      original_image_url: originalPath,
     });
     showToast("Saved to profile.");
   }
@@ -1268,36 +1278,21 @@
       el.themeToggleBtn.addEventListener("click", toggleTheme);
     }
 
-    if (el.saveApiKeyBtn && el.geminiApiKey) {
-      el.saveApiKeyBtn.addEventListener("click", () => {
-        const key = sanitizeApiKey(el.geminiApiKey.value || "");
-        if (!key) {
-          localStorage.removeItem(API_KEY_STORAGE);
-          setApiKeyState(false);
-          setStatus("Saved key cleared. Backend .env key will be used if configured.");
-          showToast("API key cleared.");
-          return;
+    if (el.logoutBtn) {
+      el.logoutBtn.addEventListener("click", async () => {
+        if (el.logoutBtn) {
+          el.logoutBtn.disabled = true;
         }
 
-        if (!isProbablyGeminiApiKey(key)) {
-          setApiKeyState(false);
-          setStatus("Invalid Gemini API key format. Remove quotes/spaces and try again.", "error");
-          showToast("Invalid key format.");
-          return;
+        try {
+          if (supabaseClient) {
+            await supabaseClient.auth.signOut();
+          }
+        } catch (_error) {
+          // Always redirect even if sign out fails locally.
+        } finally {
+          window.location.href = "auth.html";
         }
-
-        localStorage.setItem(API_KEY_STORAGE, key);
-        setApiKeyState(true);
-        setStatus("Gemini API key saved for this browser.", "ok");
-        showToast("API key saved.");
-      });
-    }
-
-    if (el.toggleApiKeyBtn && el.geminiApiKey) {
-      el.toggleApiKeyBtn.addEventListener("click", () => {
-        const show = el.geminiApiKey.type === "password";
-        el.geminiApiKey.type = show ? "text" : "password";
-        el.toggleApiKeyBtn.textContent = show ? "Hide" : "Show";
       });
     }
 
@@ -1313,20 +1308,6 @@
 
   const savedTheme = localStorage.getItem(THEME_STORAGE) || "light";
   applyTheme(savedTheme);
-
-  const storedApiKey = localStorage.getItem(API_KEY_STORAGE);
-  if (storedApiKey && el.geminiApiKey) {
-    const cleanStoredKey = sanitizeApiKey(storedApiKey);
-    if (isProbablyGeminiApiKey(cleanStoredKey)) {
-      el.geminiApiKey.value = cleanStoredKey;
-      setApiKeyState(true);
-    } else {
-      localStorage.removeItem(API_KEY_STORAGE);
-      setApiKeyState(false);
-    }
-  } else {
-    setApiKeyState(false);
-  }
 
   loadPersistedResults();
   ensureAuthenticated();
