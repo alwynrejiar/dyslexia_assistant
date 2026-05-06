@@ -47,9 +47,11 @@
   };
 
   const OPENROUTER_API_KEY_STORAGE = "dyslexaread:openrouterApiKey";
-  const API_BASE_STORAGE = "dyslexaread:apiBaseUrl";
   const THEME_STORAGE = "dyslexaread:theme";
-  const DEFAULT_API_BASE = "https://dyslexia-assistant.onrender.com";
+  const API_BASE =
+    window.location.hostname === "localhost"
+      ? "http://127.0.0.1:8000"
+      : "https://dyslexia-assistant.onrender.com";
   const LAST_REPORT_STORAGE = "dyslexaread:lastReport";
   const SAVED_RESULTS_STORAGE = "savedDyslexiaResults";
   const REQUEST_TIMEOUT_MS = 120000;
@@ -79,49 +81,6 @@
     const next = current === "dark" ? "light" : "dark";
     localStorage.setItem(THEME_STORAGE, next);
     applyTheme(next);
-  }
-
-  async function canReachBackend(baseUrl) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-      const response = await fetch(`${baseUrl}/health`, {
-        method: "GET",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) return false;
-      const data = await response.json().catch(() => null);
-      return Boolean(data && data.status === "ok");
-    } catch (_error) {
-      clearTimeout(timeoutId);
-      return false;
-    }
-  }
-
-  async function resolveApiBaseUrl() {
-    const saved = (localStorage.getItem(API_BASE_STORAGE) || "").trim().replace(/\/$/, "");
-    if (saved && await canReachBackend(saved)) {
-      return saved;
-    }
-
-    const candidates = [];
-    if (window.location.port && window.location.port !== "5500") {
-      candidates.push(`${window.location.protocol}//${window.location.host}`);
-    }
-    if (DEFAULT_API_BASE) {
-      candidates.push(DEFAULT_API_BASE);
-    }
-    candidates.push("http://127.0.0.1:8000", "http://127.0.0.1:8001");
-
-    for (const base of candidates) {
-      if (await canReachBackend(base)) {
-        localStorage.setItem(API_BASE_STORAGE, base);
-        return base;
-      }
-    }
-
-    return saved || DEFAULT_API_BASE || (window.location.port === "5500" ? "http://127.0.0.1:8001" : "");
   }
 
   function sanitizeApiKey(value) {
@@ -655,7 +614,7 @@
       return "Camera start was interrupted. Please try again.";
     }
 
-    return "Unable to access camera. Check permissions and secure context (https or localhost).";
+    return "Unable to access camera. Check permissions and use a secure origin.";
   }
 
   async function startCamera() {
@@ -667,7 +626,7 @@
     const host = window.location.hostname;
     const isLocalhost = host === "localhost" || host === "127.0.0.1";
     if (!window.isSecureContext && !isLocalhost) {
-      setStatus("Camera requires HTTPS (or localhost). Open this site over a secure origin.", "error");
+      setStatus("Camera requires HTTPS. Open this site over a secure origin.", "error");
       showToast("Camera blocked on insecure origin.");
       return;
     }
@@ -807,14 +766,11 @@
         headers["x-openrouter-api-key"] = savedOpenRouterKey;
       }
 
-      const apiBase = await resolveApiBaseUrl();
-      const analyzeUrl = `${apiBase}/analyze`;
-
       const controller = new AbortController();
       state.activeRequestAbort = controller;
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(analyzeUrl, {
+      const response = await fetch(`${API_BASE}/analyze`, {
         method: "POST",
         headers,
         body: formData,
