@@ -73,12 +73,14 @@
     const { data, error } = await client
       .from("saved_reports")
       .select("id, pdf_url, original_image_url, created_at")
+      .eq("user_id", session.user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
       el.savedResultsEmpty.textContent = "Unable to load saved results.";
       el.savedResultsEmpty.style.display = "block";
       el.savedResultsList.innerHTML = "";
+      console.error("Saved results load failed:", error);
       return;
     }
 
@@ -200,7 +202,7 @@
     el.openRouterApiKeyState.classList.toggle("is-saved", saved);
   }
 
-  const client = window.supabaseClient;
+  let client = null;
 
   function showToast(message) {
     if (!el.toast) return;
@@ -413,8 +415,32 @@
     return "";
   }
 
-  applyTheme();
-  loadSavedKeys();
-  loadSavedResults();
-  setupEvents();
+  async function initSettings() {
+    client = await window.getSupabaseClient?.();
+    if (!client) {
+      setStatus("Supabase client not available.", "error");
+      return;
+    }
+
+    const { data } = await client.auth.getSession();
+    if (!data?.session) {
+      window.location.href = "/auth";
+      return;
+    }
+
+    client.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        window.location.href = "/auth";
+        return;
+      }
+      loadSavedResults();
+    });
+
+    applyTheme();
+    loadSavedKeys();
+    await loadSavedResults();
+    setupEvents();
+  }
+
+  initSettings();
 })();

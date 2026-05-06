@@ -18,7 +18,7 @@
     toast: document.getElementById("toast"),
   };
 
-  const client = window.supabaseClient;
+  let client = null;
 
   function setStatus(message, mode = "") {
     if (!el.authStatus) return;
@@ -91,6 +91,7 @@
     const { error } = await client.auth.signInWithPassword({ email, password });
     if (error) {
       setStatus(error.message || "Unable to sign in.", "error");
+      console.error("Sign in failed:", error);
       return;
     }
 
@@ -124,6 +125,7 @@
     const { data, error } = await client.auth.signUp({ email, password });
     if (error) {
       setStatus(error.message || "Unable to sign up.", "error");
+      console.error("Sign up failed:", error);
       return;
     }
 
@@ -148,19 +150,41 @@
     window.location.href = "/profile";
   }
 
-  el.tabs.forEach((tab) => {
-    tab.addEventListener("click", () => switchPanel(tab.dataset.authTab || "signin"));
-  });
+  async function initAuthPage() {
+    client = await window.getSupabaseClient?.();
+    if (!client) {
+      setStatus("Supabase client not available.", "error");
+      return;
+    }
 
-  if (el.signupRole) {
-    el.signupRole.addEventListener("change", toggleCustomRole);
+    const { data } = await client.auth.getSession();
+    if (data?.session) {
+      window.location.href = "/app";
+      return;
+    }
+
+    client.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        window.location.href = "/app";
+      }
+    });
+
+    el.tabs.forEach((tab) => {
+      tab.addEventListener("click", () => switchPanel(tab.dataset.authTab || "signin"));
+    });
+
+    if (el.signupRole) {
+      el.signupRole.addEventListener("change", toggleCustomRole);
+    }
+
+    if (el.signinBtn) {
+      el.signinBtn.addEventListener("click", signIn);
+    }
+
+    if (el.signupBtn) {
+      el.signupBtn.addEventListener("click", signUp);
+    }
   }
 
-  if (el.signinBtn) {
-    el.signinBtn.addEventListener("click", signIn);
-  }
-
-  if (el.signupBtn) {
-    el.signupBtn.addEventListener("click", signUp);
-  }
+  initAuthPage();
 })();

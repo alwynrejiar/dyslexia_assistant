@@ -1,5 +1,5 @@
 (() => {
-  const client = window.supabaseClient;
+  let client = null;
 
   const el = {
     name: document.getElementById("profileName"),
@@ -585,7 +585,29 @@
     });
   }
 
-  loadProfile();
+  async function initProfile() {
+    client = await window.getSupabaseClient?.();
+    if (!client) {
+      setStatus("Supabase client not available.", "error");
+      return;
+    }
+
+    const { data } = await client.auth.getSession();
+    if (!data?.session) {
+      window.location.href = "/auth";
+      return;
+    }
+
+    client.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        window.location.href = "/auth";
+      }
+    });
+
+    loadProfile();
+  }
+
+  initProfile();
 })();
 
 function applyAvatar(url, fallbackSource) {

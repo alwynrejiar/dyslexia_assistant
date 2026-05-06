@@ -1,5 +1,5 @@
 (() => {
-  const supabaseClient = window.supabaseClient;
+  let supabaseClient = null;
   const state = {
     selectedFile: null,
     stream: null,
@@ -108,11 +108,19 @@
   }
 
   async function ensureAuthenticated() {
-    if (!supabaseClient) return;
+    if (!supabaseClient && window.getSupabaseClient) {
+      supabaseClient = await window.getSupabaseClient();
+    }
+    if (!supabaseClient) {
+      showErrorBanner("Authentication unavailable. Please refresh.");
+      return false;
+    }
     const { data } = await supabaseClient.auth.getSession();
     if (!data?.session) {
       window.location.href = "/auth";
+      return false;
     }
+    return true;
   }
 
   function hideResultsOnError() {
@@ -921,6 +929,10 @@
   }
 
   async function saveReportToSupabase(pdfBlob, originalImageDataUrl) {
+    if (!supabaseClient) {
+      showToast("Sign in to save reports to profile.");
+      return;
+    }
     const { data } = await supabaseClient.auth.getSession();
     const session = data?.session;
     if (!session) {
@@ -1259,19 +1271,32 @@
     window.addEventListener("beforeunload", stopCamera);
   }
 
-  setupDnD();
-  setupEvents();
+  async function initApp() {
+    supabaseClient = await window.getSupabaseClient?.();
+    const authed = await ensureAuthenticated();
+    if (supabaseClient) {
+      supabaseClient.auth.onAuthStateChange((_event, session) => {
+        if (!session) {
+          window.location.href = "/auth";
+        }
+      });
+    }
 
-  const savedTheme = localStorage.getItem(THEME_STORAGE) || "light";
-  applyTheme(savedTheme);
+    setupDnD();
+    setupEvents();
 
-  loadPersistedResults();
-  ensureAuthenticated();
-  if (el.loadingIndicator) {
-    el.loadingIndicator.hidden = true;
-    el.loadingIndicator.style.display = "none";
+    const savedTheme = localStorage.getItem(THEME_STORAGE) || "light";
+    applyTheme(savedTheme);
+
+    loadPersistedResults();
+    if (authed && el.loadingIndicator) {
+      el.loadingIndicator.hidden = true;
+      el.loadingIndicator.style.display = "none";
+    }
+    stopFakeProgress(false);
+    setAnalyzing(false);
+    updateLiveModeButton();
   }
-  stopFakeProgress(false);
-  setAnalyzing(false);
-  updateLiveModeButton();
+
+  initApp();
 })();
