@@ -62,6 +62,28 @@ If you didn't set up the `.env` file, the app will ask you to paste your key whe
 
 ---
 
+## 🌐 Deployment (Render + Vercel)
+
+**Backend (Render)**
+- Build: `pip install -r backend/requirements.txt`
+- Start: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+
+**Backend env vars**
+- `OPENROUTER_API_KEY` (required for `/analyze`)
+- `OPENROUTER_MODEL` (optional, default: `google/gemini-2.5-flash`)
+- `CORS_ORIGINS` (comma-separated; set to your Vercel URL)
+
+**Frontend (Vercel)**
+- Build: `npm run build:react`
+- Output: `dist`
+
+Example `CORS_ORIGINS` value:
+```
+https://your-app.vercel.app
+```
+
+---
+
 ## 📁 Project Structure
 
 ```

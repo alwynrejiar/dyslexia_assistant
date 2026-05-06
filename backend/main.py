@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -38,10 +39,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _parse_cors_origins(value: str) -> list[str]:
+    origins = [item.strip() for item in value.split(",") if item.strip()]
+    return origins or ["*"]
+
+
+cors_origins = _parse_cors_origins(
+    os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+)
+allow_all_origins = "*" in cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
