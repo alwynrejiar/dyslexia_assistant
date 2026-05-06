@@ -380,7 +380,7 @@
         setOpenRouterApiKeyState(false);
         setStatus("Account deleted.", "ok");
         showToast("Account deleted.");
-        window.location.href = "auth.html";
+        window.location.href = "/auth";
       });
     }
 

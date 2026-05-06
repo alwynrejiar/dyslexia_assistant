@@ -96,7 +96,7 @@
 
     setStatus("Signed in!", "ok");
     showToast("Signed in successfully.");
-    window.location.href = "app.html";
+    window.location.href = "/app";
   }
 
   async function signUp() {
@@ -145,7 +145,7 @@
 
     setStatus("Account created. Complete your profile.", "ok");
     showToast("Account created.");
-    window.location.href = "profile.html";
+    window.location.href = "/profile";
   }
 
   el.tabs.forEach((tab) => {

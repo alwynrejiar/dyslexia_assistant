@@ -21,7 +21,7 @@
   };
 
   const LEGACY_DEFAULT_AVATAR_URL = "https://images.unsplash.com/photo-1544005313-94ddf0286df2";
-  const shouldRedirectOnSave = !window.location.pathname.endsWith("settings.html");
+  const shouldRedirectOnSave = !window.location.pathname.endsWith("/settings");
   const LAST_REPORT_STORAGE = "dyslexaread:lastReport";
   const MAX_SAVED_REPORTS = 25;
   let avatarPath = "";
@@ -135,7 +135,7 @@
     const { data: sessionData } = await client.auth.getSession();
     const session = sessionData?.session;
     if (!session) {
-      window.location.href = "auth.html";
+      window.location.href = "/auth";
       return;
     }
 
@@ -225,7 +225,7 @@
     const { data: sessionData } = await client.auth.getSession();
     const session = sessionData?.session;
     if (!session) {
-      window.location.href = "auth.html";
+      window.location.href = "/auth";
       return;
     }
     const { payload, errorMessage } = await buildProfilePayload(session.user.id);
@@ -245,7 +245,7 @@
     setStatus("Profile saved.", "ok");
     showToast("Profile updated.");
     if (shouldRedirectOnSave) {
-      window.location.href = "app.html";
+      window.location.href = "/app";
     }
   }
 

@@ -111,7 +111,7 @@
     if (!supabaseClient) return;
     const { data } = await supabaseClient.auth.getSession();
     if (!data?.session) {
-      window.location.href = "auth.html";
+      window.location.href = "/auth";
     }
   }
 
@@ -1247,7 +1247,7 @@
         } catch (_error) {
           // Always redirect even if sign out fails locally.
         } finally {
-          window.location.href = "auth.html";
+          window.location.href = "/auth";
         }
       });
     }
