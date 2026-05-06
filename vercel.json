@@ -1,0 +1,6 @@
+{
+  "framework": "vite",
+  "buildCommand": "npm run build:react",
+  "outputDirectory": "dist",
+  "installCommand": "npm install"
+}
